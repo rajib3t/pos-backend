@@ -1,0 +1,166 @@
+import { Request, Response } from "express";
+import { Controller } from "../controller";
+
+import UserService from "../../services/user.service";
+import TokenService from "../../services/token.service";
+import Logging from "../../libraries/logging.library";
+import { comparePassword } from "../../utils/passwords";
+import { responseResult } from "../../utils/response";
+import {errorResponse} from "../../utils/errorResponse"
+class LoginController extends Controller {
+    private userService: UserService;
+    private tokenService: TokenService;
+    
+    constructor() {
+        super();
+        this.router.post('/login', this.asyncHandler(this.login));
+        this.router.post('/logout', this.asyncHandler(this.logout));
+        this.router.post('/refresh', this.asyncHandler(this.refreshToken));
+        this.userService = UserService.getInstance();
+        this.tokenService = TokenService.getInstance();
+    }
+
+    /**
+     * Validate tenant context exists (but allow landlord requests)
+     */
+    private validateTenantContext(req: Request): void {
+        if (!req.tenantConnection) {
+            throw new Error('Database connection is required');
+        }
+    }
+
+    /**
+     * Get context info for logging
+     */
+    private getContextInfo(req: Request): string {
+        if (req.isLandlord) {
+            return 'landlord (main database)';
+        }
+        return `tenant ${req.tenant?.subdomain}`;
+    }
+
+    private login = async (req: Request, res: Response) => {
+        this.validateTenantContext(req);
+        console.log(req.headers);
+        
+        
+        const { email, password } = req.body;
+
+        // Validate user input
+        if (!email || !password) {
+            return errorResponse.sendError({ res, statusCode: 400, message: "Email and password are required" });
+        }
+
+        try {
+            let user;
+
+            if (req.isLandlord) {
+                // Landlord request - use main database
+                user = await this.userService.findByEmail(email);
+            } else {
+                // Tenant request - use tenant database
+                user = await this.userService.findByEmail(req.tenantConnection!, email);
+            }
+
+            if (!user || !user.password) {
+                return errorResponse.sendError({ res, statusCode: 401, message: "Invalid email or password" });
+            }
+
+            const isPasswordValid = await comparePassword(password, user.password);
+            if (!isPasswordValid) {
+                return errorResponse.sendError({ res, statusCode: 401, message: "Password is incorrect" });
+            }
+
+            const options = {
+                httpOnly: true,
+                secure: true
+            }
+
+            // Enhanced token payload with context information
+            const tokenPayload = {
+                userId: user._id,
+                email: user.email,
+                context: req.isLandlord ? 'landlord' : 'tenant',
+                subdomain: req.subdomain || 'landlord',
+                tenantId: req.tenant?._id || null,
+                timestamp: new Date().getTime()
+            };
+
+            // Use appropriate database for token storage based on context
+            const connection = req.isLandlord ? null : req.tenantConnection;
+            
+            const accessToken = await this.tokenService.generateToken(tokenPayload);
+            const refreshToken = await this.tokenService.generateRefreshToken(tokenPayload, connection);
+            const userResponse = { 
+                email: user.email, 
+                name: user.name, 
+                id: user._id,
+                context: req.isLandlord ? 'landlord' : 'tenant',
+                subdomain: req.subdomain || 'landlord',
+                tenantId: req.tenant?._id || null,
+                tenantName: req.tenant?.name || 'Landlord',
+                permissions: req.isLandlord ? ['admin', 'landlord'] : ['tenant'],
+                loginTime: new Date().toISOString()
+            };
+            const loginData = { accessToken, user: userResponse, refreshToken };
+            
+            res.cookie("refreshToken", refreshToken, options);
+            res.cookie("accessToken", accessToken, options);
+            
+            Logging.info(`User logged in from ${this.getContextInfo(req)}: ${email}`);
+            
+            return responseResult.sendResponse({ res, data: loginData, message: "Login successful" });
+        } catch (error) {
+            Logging.error(`Login error in ${this.getContextInfo(req)}: ${error}`);
+            return errorResponse.sendError({ res, statusCode: 500, message: "Internal server error" });
+        }
+    }
+
+
+    private logout = async (req: Request, res: Response) => {
+        
+        const incomingRefreshToken = req.cookies.refreshToken.token || req.body.refreshToken;
+        if (!incomingRefreshToken) {
+            return errorResponse.sendError({ res, statusCode: 400, message: "Refresh token is required" });
+        }
+       
+        try {
+            // Use appropriate database context for token invalidation
+            const connection = req.isLandlord ? null : req.tenantConnection;
+            
+            await this.tokenService.invalidateRefreshToken(incomingRefreshToken, connection);
+            res.clearCookie("refreshToken");
+            res.clearCookie("accessToken");
+
+            Logging.info(`User logged out from ${this.getContextInfo(req)}`);
+            return responseResult.sendResponse({ res, message: "Logout successful" });
+        } catch (error) {
+            Logging.error(`Error logging out user: ${error}`);
+            return errorResponse.sendError({ res, statusCode: 500, message: "Internal server error" });
+        }
+    }
+
+
+    private refreshToken = async (req: Request, res: Response) => {
+        const incomingRefreshToken = req.cookies.refreshToken.token || req.body.refreshToken;
+        if (!incomingRefreshToken) {
+            return errorResponse.sendError({ res, statusCode: 400, message: "Refresh token is required" });
+        }
+
+       
+        try {
+            // Use appropriate database context for token refresh
+            const connection = req.isLandlord ? null : req.tenantConnection;
+            
+            const newAccessToken = await this.tokenService.refreshTheAccessToken(incomingRefreshToken, connection);
+            
+            Logging.info(`Token refreshed for ${this.getContextInfo(req)}`);
+            return responseResult.sendResponse({ res, data: { accessToken: newAccessToken.token , refreshToken: req.cookies.refreshToken }, message: "Token refreshed successfully" });
+        } catch (error) {
+            Logging.error(`Error refreshing token: ${error}`);
+            return errorResponse.sendError({ res, statusCode: 500, message: "Internal server error" });
+        }
+    }
+}
+
+export default new LoginController().router;
