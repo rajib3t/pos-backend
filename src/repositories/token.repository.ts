@@ -10,7 +10,7 @@ export default class TokenRepository {
     constructor(connection?: Connection) {
         if (connection) {
             // Use tenant-specific connection
-            this.model = TenantModelFactory.getTokenModel(connection);
+            this.model = TenantModelFactory.getModel<IToken>(connection, 'Token', Token.schema);
         } else {
             // Use default master database connection
             this.model = Token;

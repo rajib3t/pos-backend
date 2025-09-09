@@ -6,8 +6,7 @@ import { jwtConfig } from '../config';
 
 import TokenRepository from '../repositories/token.repository';
 import { IToken } from '../models/token.model';
-import { errorResponse } from '../utils/errorResponse';
-import e, { Response } from 'express';
+
 import Logging from '../libraries/logging.library';
 import { log } from 'console';
 import { Connection } from 'mongoose';

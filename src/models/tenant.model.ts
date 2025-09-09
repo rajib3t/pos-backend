@@ -1,11 +1,12 @@
 import { Schema, model, Document } from 'mongoose';
-
+import { ISetting } from './setting.model';
 export interface ITenant extends Document {
     name: string;
     subdomain: string;
     databaseName: string;
     databaseUser: string;
     databasePassword: string;
+    settings?: ISetting
 }
 
 const TenantSchema :Schema = new Schema(
@@ -15,6 +16,7 @@ const TenantSchema :Schema = new Schema(
         databaseName: { type: String, required: true },
         databaseUser: { type: String, required: true },
         databasePassword: { type: String, required: true },
+        settings: { type: Schema.Types.ObjectId, ref: 'Setting' }
     },
     {
         timestamps: true,

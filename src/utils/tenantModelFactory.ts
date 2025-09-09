@@ -46,7 +46,12 @@ export class TenantModelFactory {
             return model;
         }
     }
-
+    /**
+     * Generic method to get any model for tenant
+     */
+    public static getTenantModel<T>(connection: Connection, modelName: string, schema: Schema): Model<T> {
+        return this.getModel<T>(connection, modelName, schema);
+    }
     /**
      * Get User model for tenant
      */

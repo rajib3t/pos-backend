@@ -10,7 +10,7 @@ export default class AddressRepository {
     constructor(connection?: Connection) {
         if (connection) {
             // Use tenant-specific connection
-            this.addressModel = TenantModelFactory.getAddressModel(connection);
+            this.addressModel = TenantModelFactory.getTenantModel<IAddress>(connection, 'Address', Address.schema);
         } else {
             // Use default master database connection
             this.addressModel = Address;

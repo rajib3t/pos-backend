@@ -41,7 +41,7 @@ class LoginController extends Controller {
 
     private login = async (req: Request, res: Response) => {
         this.validateTenantContext(req);
-        console.log(req.headers);
+       
         
         
         const { email, password } = req.body;
@@ -106,6 +106,8 @@ class LoginController extends Controller {
             
             res.cookie("refreshToken", refreshToken, options);
             res.cookie("accessToken", accessToken, options);
+
+           
             
             Logging.info(`User logged in from ${this.getContextInfo(req)}: ${email}`);
             

@@ -189,4 +189,13 @@ export default class TenantService {
         }
     }
 
+
+    public async  getTenantSettings(subdomain: string): Promise<{ [key: string]: any } | null> {
+        const tenant = await this.tenantRepository.findTenant({ subdomain });
+        if (!tenant) {
+            return null;
+        }
+        return tenant || null;
+    }
+    
 }

@@ -5,7 +5,7 @@ import authRouts from "./auth.route";
 import profileRouter from "./profile.route";
 import tenantRouter from "./tenant.route";
 import userRouter from "./user.route";
-
+import tenantsRouter from "./tenants.route";
 class AppRouter{
     private router: Router;
     private routes: RouteConfig[];
@@ -32,6 +32,10 @@ class AppRouter{
             {
                 path: "/users",
                 route: userRouter
+            },
+            {
+                path: "/tenants",
+                route: tenantsRouter
             }
         ];
     }

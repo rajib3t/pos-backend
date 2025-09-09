@@ -1,7 +1,7 @@
 // src/repositories/user.repository.ts
 import { Model } from 'mongoose';
 import User ,{ IUser,  } from '../models/user.model';
-import e from 'express';
+
 
 export interface IProfileData extends IUser {
     address?: {
