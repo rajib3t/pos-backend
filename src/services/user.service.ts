@@ -263,7 +263,7 @@ class UserService {
         if (existingAddress) {
             return this.addressRepository.update(existingAddress._id as string, addressData);
         }
-        return this.addressRepository.create(user, addressData);
+        return this.addressRepository.create( addressData);
     }
     public async getUserProfile(userId: string): Promise<IProfileData | null>;
     public async getUserProfile(tenantConnection: Connection, id: string): Promise<IProfileData | null>;

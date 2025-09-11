@@ -3,6 +3,7 @@ import { ITenant } from "./tenant.model";
 export interface ISetting extends Document {
   tenant: ITenant["_id"];
   shopName?: string;
+  code?: string;
   address?: string;
   address2?: string;
   city?: string;
@@ -24,6 +25,7 @@ const SettingSchema: Schema = new Schema(
   {
     tenant: { type: Schema.Types.ObjectId, ref: "Tenant", required: true, unique: true },
     shopName: { type: String , required: true },
+    code: { type: String , required:true},
     address: { type: String },
     address2: { type: String },
     city: { type: String },

@@ -73,6 +73,7 @@ class SettingController extends Controller {
             
             const responseData = {
                 shopName: settings?.shopName || tenant.name,
+                code:settings?.code,
                 address1: settings?.address,
                 address2: settings?.address2,
                 city: settings?.city,

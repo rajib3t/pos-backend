@@ -1,10 +1,13 @@
 import { Model } from "mongoose";
 import Tenant, { ITenant,  } from "../models/tenant.model";
-export class TenantRepository {
+import { PaginatedResult, PaginationOptions, Repository } from "./repository";
+export class TenantRepository extends Repository<ITenant> {
+    
     private tenantModel: Model<ITenant>;
 
 
     constructor() {
+        super();
         this.tenantModel = Tenant;
     }
 
@@ -71,6 +74,10 @@ export class TenantRepository {
         }
     }
 
+
+    findPaginated(options?: PaginationOptions<ITenant> | undefined): Promise<PaginatedResult<ITenant>> {
+        throw new Error("Method not implemented.");
+    }
 
 
 }

@@ -24,10 +24,10 @@ class SettingService {
         if (connectionOrData instanceof Connection) {
             // Using tenant connection
             this.settingRepository = new SettingRepository(connectionOrData);
-            return this.settingRepository.createSetting(data!);
+            return this.settingRepository.create(data!);
         } else {
             // Using main database (backward compatibility)
-            return this.settingRepository.createSetting(connectionOrData);
+            return this.settingRepository.create(connectionOrData);
         }
     }
 
@@ -37,10 +37,10 @@ class SettingService {
         if (connectionOrId instanceof Connection) {
             // Using tenant connection
             this.settingRepository = new SettingRepository(connectionOrId);
-            return this.settingRepository.findSettingById(id!);
+            return this.settingRepository.findById(id!);
         } else {
             // Using main database (backward compatibility)
-            return this.settingRepository.findSettingById(connectionOrId);
+            return this.settingRepository.findById(connectionOrId);
         }
     }
 
@@ -63,10 +63,10 @@ class SettingService {
         if (connectionOrId instanceof Connection) {
             // Using tenant connection
             this.settingRepository = new SettingRepository(connectionOrId);
-            return this.settingRepository.updateSetting(idOrData as string, data!);
+            return this.settingRepository.update(idOrData as string, data!);
         } else {
             // Using main database (backward compatibility)
-            return this.settingRepository.updateSetting(connectionOrId, idOrData as Partial<ISetting>);
+            return this.settingRepository.update(connectionOrId, idOrData as Partial<ISetting>);
         }
     }
 
@@ -76,10 +76,10 @@ class SettingService {
         if (connectionOrId instanceof Connection) {
             // Using tenant connection
             this.settingRepository = new SettingRepository(connectionOrId);
-            return this.settingRepository.deleteSetting(id!);
+            return this.settingRepository.delete(id!);
         } else {
             // Using main database (backward compatibility)
-            return this.settingRepository.deleteSetting(connectionOrId);
+            return this.settingRepository.delete(connectionOrId);
         }
     }
 

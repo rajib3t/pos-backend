@@ -191,7 +191,7 @@ class ProfileController extends Controller {
                     state,
                     zip: postalCode,
                 };
-                await addressRepository.create(user, newAddress);
+                await addressRepository.create(newAddress);
             }
 
             Logging.info(`Profile updated for ${this.getContextInfo(req)}: ${updatedUser?.email}`);
