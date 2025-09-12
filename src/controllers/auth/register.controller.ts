@@ -6,11 +6,13 @@ import {    hashPassword} from "../../utils/passwords";
 import Logging from "../../libraries/logging.library";
 import { responseResult } from "../../utils/response";
 import {errorResponse} from "../../utils/errorResponse"
+import ValidateMiddleware from '../../middlewares/validate'
+import { registerSchema } from "../../validators/auth.validator";
 class RegisterController extends Controller {
     private userService : UserService
     constructor() {
         super();
-        this.router.post('/register', this.asyncHandler(this.register));
+        this.router.post('/register', ValidateMiddleware.getInstance().validate(registerSchema), this.asyncHandler(this.register));
         this.userService = UserService.getInstance();
     }
     /**
@@ -54,8 +56,15 @@ class RegisterController extends Controller {
             }
 
             if (existingUser) {
-                return errorResponse.sendError({ res, statusCode: 409, message: "User already exists" });
+                return errorResponse.sendError({ 
+                    res, 
+                    statusCode: 409, 
+                    message: "Validation failed",
+                    details: ["email: Email is already registered"]
+                 });
             }
+
+            
 
             const hashedPassword = await hashPassword(password);
 

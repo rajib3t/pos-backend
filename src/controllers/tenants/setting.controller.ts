@@ -6,7 +6,8 @@ import { responseResult } from "../../utils/response";
 import { errorResponse } from "../../utils/errorResponse";
 import SettingService from "../../services/setting.service";
 import Logging from "../../libraries/logging.library";
-
+import ValidateMiddleware from "../../middlewares/validate";
+import { tenantSettingSchema } from "../../validators/tenant.validator";
 class SettingController extends Controller {
     private tenantService: TenantService;
     private settingService: SettingService;
@@ -19,7 +20,7 @@ class SettingController extends Controller {
 
     private initializeRoutes() {
         this.router.get("/settings/:subdomain", this.asyncHandler(this.index.bind(this)));
-        this.router.put("/settings/:subdomain", this.asyncHandler(this.update.bind(this)));
+        this.router.put("/settings/:subdomain", ValidateMiddleware.getInstance().validate(tenantSettingSchema), this.asyncHandler(this.update.bind(this)));
     }
     /**
          * Validate tenant context exists (but allow landlord requests)

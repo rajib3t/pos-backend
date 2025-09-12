@@ -9,7 +9,8 @@ import { IAddress } from "../models/address.model";
 import AddressRepository from "../repositories/address.repository";
 import { IUser } from "../models/user.model";
 import { comparePassword, hashPassword } from "../utils/passwords";
-import { log } from "console";
+import { profileUpdateSchema } from "../validators/user.validator";
+import ValidateMiddleware from "../middlewares/validate";
 
 class ProfileController extends Controller {
      private userService: UserService;
@@ -22,7 +23,7 @@ class ProfileController extends Controller {
 
     private initializeRoutes() {
         this.router.get("/", this.asyncHandler(this.index));
-        this.router.patch("/", this.asyncHandler(this.updateProfile));
+        this.router.patch("/", ValidateMiddleware.getInstance().validate(profileUpdateSchema), this.asyncHandler(this.updateProfile));
         this.router.patch("/password", this.asyncHandler(this.updatePassword));
     }
 
@@ -152,11 +153,31 @@ class ProfileController extends Controller {
                 if (existingUser) {
                     return errorResponse.sendError({
                         res,
-                        statusCode: 409,
-                        message: "Email is already in use",
+                        statusCode: 400,
+                        message: "Validation failed",
+                        details: ["email: Email is already in use"],
                     });
                 }
             }
+
+            if(mobile && mobile !== user.mobile){
+                let existingUser;
+                if (req.isLandlord) {
+                    existingUser = await this.userService.findByMobile(mobile);
+                } else {
+                    existingUser = await this.userService.findByMobile(req.tenantConnection!, mobile);
+                }
+
+                if (existingUser) {
+                    return errorResponse.sendError({
+                        res,
+                        statusCode: 400,
+                        message: "Validation failed",
+                        details: ["mobile: Mobile number is already in use"],
+                    });
+                }
+            }
+
 
             let updatedUser;
             if (req.isLandlord) {
@@ -194,15 +215,16 @@ class ProfileController extends Controller {
                 await addressRepository.create(newAddress);
             }
 
-            Logging.info(`Profile updated for ${this.getContextInfo(req)}: ${updatedUser?.email}`);
+            const updatedAddress = await addressRepository.findByUserId(userId as string);
+
             responseResult.sendResponse({
                 res,
                 data: {
-                    id: updatedUser?.id,
+                  
                     email: updatedUser?.email,
                     name: updatedUser?.name,
                     mobile: updatedUser?.mobile,
-                    address: { street: address, city, state, zip: postalCode }
+                    address: { street: updatedAddress?.street, city: updatedAddress?.city, state: updatedAddress?.state, zip: updatedAddress?.zip }
                 },
                 message: "User profile updated successfully",
             });

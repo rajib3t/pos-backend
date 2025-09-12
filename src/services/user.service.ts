@@ -81,6 +81,26 @@ class UserService {
         }
     }
 
+    public async findByMobile(mobile: string): Promise<IUser | null>;
+    public async findByMobile(tenantConnection: Connection, mobile: string): Promise<IUser | null>;
+    public async findByMobile(connectionOrMobile: Connection | string, mobile?: string): Promise<IUser | null> {
+        if (connectionOrMobile instanceof Connection) {
+            // Tenant-aware version
+            try {
+                const UserModel = TenantModelFactory.getUserModel(connectionOrMobile);
+                return await UserModel.findOne({ mobile: mobile! });
+            } catch (error) {
+                Logging.error(`Failed to find user by mobile: ${error}`);
+                throw error;
+            }
+        } else {
+            // Original version
+            return this.userRepository.findByMobile(connectionOrMobile);
+        }
+    }
+
+               
+
     public async findById(id: string): Promise<IUser | null>;
     public async findById(tenantConnection: Connection, id: string): Promise<IUser | null>;
     public async findById(connectionOrId: Connection | string, id?: string): Promise<IUser | null> {
@@ -99,9 +119,7 @@ class UserService {
         }
     }
 
-    public async findByMobile(mobile: string): Promise<IUser | null> {
-        return this.userRepository.findByMobile(mobile);
-    }
+    
 
     public async update(id: string, userData: Partial<IUser>): Promise<IUser | null>;
     public async update(tenantConnection: Connection, id: string, userData: Partial<IUser>): Promise<IUser | null>;

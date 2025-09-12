@@ -7,13 +7,15 @@ import Logging from "../../libraries/logging.library";
 import { comparePassword } from "../../utils/passwords";
 import { responseResult } from "../../utils/response";
 import {errorResponse} from "../../utils/errorResponse"
+import ValidateMiddleware from '../../middlewares/validate'
+import { loginSchema } from "../../validators/auth.validator";
 class LoginController extends Controller {
     private userService: UserService;
     private tokenService: TokenService;
     
     constructor() {
         super();
-        this.router.post('/login', this.asyncHandler(this.login));
+        this.router.post('/login', ValidateMiddleware.getInstance().validate(loginSchema), this.asyncHandler(this.login));
         this.router.post('/logout', this.asyncHandler(this.logout));
         this.router.post('/refresh', this.asyncHandler(this.refreshToken));
         this.userService = UserService.getInstance();
