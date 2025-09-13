@@ -6,6 +6,8 @@ import TenantService from "../services/tenant.service";
 import { ITenant } from "../models/tenant.model";
 import { log } from "console";
 import Logging from "../libraries/logging.library";
+import { DateUtils } from "../utils/dateUtils";
+
 class TenantController extends Controller{
     private tenantService: TenantService;
     constructor() {
@@ -99,17 +101,36 @@ class TenantController extends Controller{
                 filter.subdomain = { $regex: subdomain, $options: 'i' }; // Case-insensitive search
             }
             
-            // Date range filtering
+            // Date range filtering with improved timezone handling
             if (createdAtFrom || createdAtTo) {
-                filter.createdAt = {};
-                if (createdAtFrom) {
-                    filter.createdAt.$gte = new Date(createdAtFrom as string);
-                }
-                if (createdAtTo) {
-                    // Add time to end of day for "to" date
-                    const toDate = new Date(createdAtTo as string);
-                    toDate.setHours(23, 59, 59, 999);
-                    filter.createdAt.$lte = toDate;
+                const timezoneOffset = DateUtils.getTimezoneOffset(req);
+                const dateFilter = DateUtils.getDateRangeFilter(
+                    createdAtFrom as string,
+                    createdAtTo as string,
+                    timezoneOffset
+                );
+                
+                if (dateFilter) {
+                    filter.createdAt = dateFilter;
+                    
+                    // Log the date filtering for debugging
+                    if (dateFilter.$gte) {
+                        Logging.info(DateUtils.formatDateLog(
+                            dateFilter.$gte, 
+                            'Date filter FROM', 
+                            createdAtFrom as string, 
+                            timezoneOffset
+                        ));
+                    }
+                    
+                    if (dateFilter.$lte) {
+                        Logging.info(DateUtils.formatDateLog(
+                            dateFilter.$lte, 
+                            'Date filter TO', 
+                            createdAtTo as string, 
+                            timezoneOffset
+                        ));
+                    }
                 }
             }
 
