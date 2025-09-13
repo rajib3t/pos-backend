@@ -87,7 +87,7 @@ class TenantController extends Controller{
 
     private index = async (req: Request , res: Response, next: NextFunction)=>  {
 
-        const { page, limit, name, subdomain, createdAtFrom, createdAtTo, sortBy, sortOrder } = req.query;
+        const { page, limit, name, subdomain, createdAtFrom, createdAtTo, sortBy, sortOrder, sortField, sortDirection } = req.query;
         
         try {
             // Build filter object based on query parameters
@@ -134,11 +134,17 @@ class TenantController extends Controller{
                 }
             }
 
-            // Build sort object
+            // Build sort object - support both old and new parameter names
             const sort: any = {};
-            if (sortBy) {
-                const order = sortOrder === 'asc' ? 1 : -1;
-                sort[sortBy as string] = order;
+            
+            // Priority: sortField/sortDirection > sortBy/sortOrder
+            const fieldName = (sortField as string) || (sortBy as string);
+            const direction = (sortDirection as string) || (sortOrder as string);
+            
+            if (fieldName) {
+                // Support both 'asc'/'desc' and 'ascending'/'descending'
+                const order = direction === 'asc' || direction === 'ascending' ? 1 : -1;
+                sort[fieldName] = order;
             } else {
                 sort.createdAt = -1; // Default sort by creation date descending
             }
