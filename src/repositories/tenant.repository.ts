@@ -1,60 +1,19 @@
 import { Model } from "mongoose";
 import Tenant, { ITenant,  } from "../models/tenant.model";
 import { PaginatedResult, PaginationOptions, Repository } from "./repository";
-export class TenantRepository extends Repository<ITenant> {
-    
+import BaseRepository from "./base.repository";
+export class TenantRepository extends BaseRepository<ITenant> {
+
     private tenantModel: Model<ITenant>;
 
 
     constructor() {
-        super();
+        super(Tenant);
         this.tenantModel = Tenant;
     }
 
 
-    async create(tenantData: Partial<ITenant>): Promise<ITenant> {
-        try {
-            return this.tenantModel.create(tenantData);
-        } catch (error) {
-
-            throw new Error("Tenant create error: " + (error as Error).message);
-
-        }
-        
-    }
-
-    async update(id:string, tenantData: Partial<ITenant>): Promise<ITenant | null> {
-
-        try {
-            return this.tenantModel.findByIdAndUpdate(id, tenantData, { new: true }).exec();
-        } catch (error) {
-            throw new Error("Tenant update error: " + (error as Error).message);
-        }
-    }
-
-    async findById(id: string): Promise<ITenant | null> {
-        try {
-            return this.tenantModel.findById(id).exec();
-        } catch (error) {
-            throw new Error("Tenant findById error: " + (error as Error).message);
-        }
-    }
-
-    async findAll(): Promise<ITenant[]> {
-        try {
-            return this.tenantModel.find().exec();
-        } catch (error) {
-            throw new Error("Tenant findAll error: " + (error as Error).message);
-        }
-    }
-
-    async delete(id: string): Promise<ITenant | null> {
-        try {
-            return this.tenantModel.findByIdAndDelete(id).exec();
-        } catch (error) {
-            throw new Error("Tenant delete error: " + (error as Error).message);
-        }
-    }
+    
 
 
     async findTenant(conditions: { [key: string]: any }): Promise<ITenant | null> {
@@ -75,9 +34,7 @@ export class TenantRepository extends Repository<ITenant> {
     }
 
 
-    findPaginated(options?: PaginationOptions<ITenant> | undefined): Promise<PaginatedResult<ITenant>> {
-        throw new Error("Method not implemented.");
-    }
+   
 
 
 }

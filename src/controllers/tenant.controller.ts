@@ -14,6 +14,7 @@ class TenantController extends Controller{
 
     private initializeRoutes() {
         this.router.post("/create", this.asyncHandler(this.create));
+        this.router.get("/", this.asyncHandler(this.index));
     }
 
     private create = async (req: Request , res: Response, next: NextFunction)=>  {
@@ -64,6 +65,33 @@ class TenantController extends Controller{
         }
         
 
+    }
+
+    private index = async (req: Request , res: Response, next: NextFunction)=>  {
+
+        const { page, limit } = req.query;
+        try {
+            const tenants = await this.tenantService.getTenantsWithPagination({
+                page: Number(page) || 1,
+                limit: Number(limit) || 10,
+                filter: {},
+                sort: {}
+            });
+
+            
+            return responseResult.sendResponse({
+                res,
+                data: tenants,
+                message: "Tenants retrieved successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: (error as Error).message || "Internal Server Error",
+                statusCode: 500
+            });
+        }
     }
 }
 

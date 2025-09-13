@@ -3,7 +3,7 @@ import { TenantRepository } from '../repositories/tenant.repository';
 import CreateDatabase from '../database/create';
 import { TenantConnectionManager } from '../database/tenantConnection';
 import Logging from '../libraries/logging.library';
-
+import { PaginatedResult, PaginationOptions } from '@/repositories/repository';
 export default class TenantService {
     private static instance: TenantService;
     private tenantRepository: TenantRepository;
@@ -41,8 +41,12 @@ export default class TenantService {
         return updatedTenant;
     }
 
-    public async delete(id: string): Promise<ITenant | null> {
-        return this.tenantRepository.delete(id);
+    public async delete(id: string): Promise<number | null> {
+        const result = await this.tenantRepository.delete(id);
+        if (typeof result === 'object' && result !== null && 'deletedCount' in result) {
+            return result.deletedCount || 0;
+        }
+        return typeof result === 'number' ? result : null;
     }
 
    
@@ -197,5 +201,10 @@ export default class TenantService {
         }
         return tenant || null;
     }
-    
+
+
+    public async getTenantsWithPagination(options?: PaginationOptions<ITenant>): Promise<PaginatedResult<ITenant>> {
+        
+        return this.tenantRepository.findPaginated(options);
+    }
 }

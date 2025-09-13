@@ -172,7 +172,8 @@ class UserService {
             }
         } else {
             // Original version
-            return this.userRepository.delete(connectionOrId);
+            const result = await this.userRepository.delete(connectionOrId);
+            return result as IUser | null;
         }
     }
 
