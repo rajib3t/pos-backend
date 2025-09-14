@@ -180,15 +180,32 @@ export default class TenantService {
             // Close tenant connection if exists
             await this.connectionManager.closeTenantConnection(tenant.subdomain);
             
+            // Delete the tenant database and user
+            try {
+                await this.deleteTenantDatabase(tenant);
+                Logging.info(`Database deleted for tenant: ${tenant.name}`);
+            } catch (dbError) {
+                Logging.warning(`Failed to delete database for tenant ${tenant.name}: ${dbError}`);
+                // Continue with tenant record deletion even if database deletion fails
+            }
+            
             // Delete tenant record
             await this.tenantRepository.delete(id);
             
             Logging.info(`Tenant deleted: ${tenant.name} (${tenant.subdomain})`);
-            
-            // Note: Database deletion should be handled carefully in production
-            // You might want to archive rather than delete
         } catch (error) {
             Logging.error(`Failed to delete tenant: ${error}`);
+            throw error;
+        }
+    }
+
+    public async deleteTenantDatabase(tenant: ITenant): Promise<void> {
+        try {
+            const createDb = CreateDatabase;
+            await createDb.deleteDatabase(tenant.databaseName, tenant.databaseUser);
+            Logging.info(`Database deleted for tenant: ${tenant.name}`);
+        } catch (error) {
+            Logging.error(`Failed to delete database for tenant ${tenant.name}: ${error}`);
             throw error;
         }
     }

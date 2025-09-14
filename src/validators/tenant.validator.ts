@@ -49,4 +49,24 @@ const getTenantSchema = z.object({
     })
 });
 
-export { tenantSettingSchema, tenantCreateSchema, getTenantsSchema, getTenantSchema };
+const updateTenantSchema = z.object({
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+    }),
+    body: z.object({
+        name: z.string().min(3, "Name must be at least 3 characters").max(100, "Name is too long").optional(),
+        subdomain: z.string().min(3, "Subdomain must be at least 3 characters")
+            .max(50, "Subdomain is too long")
+            .regex(/^[a-zA-Z0-9-]+$/, "Subdomain can only contain letters, numbers, and hyphens")
+            .optional(),
+       
+    })
+});
+
+const deleteTenantSchema = z.object({
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+    })
+});
+
+export { tenantSettingSchema, tenantCreateSchema, getTenantsSchema, getTenantSchema, updateTenantSchema, deleteTenantSchema };

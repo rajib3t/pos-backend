@@ -44,6 +44,40 @@ class CreateDatabase {
       await client.close();
     }
   }
+
+  public async deleteDatabase(
+    dbName: string,
+    username?: string
+  ): Promise<void> {
+    const client = new MongoClient(this.dbUri);
+    try {
+      await client.connect();
+      const adminDb = client.db("admin");
+
+      // Delete the user if username is provided
+      if (username) {
+        try {
+          await adminDb.command({
+            dropUser: username,
+          });
+          Logging.info(`User '${username}' deleted successfully`);
+        } catch (userError) {
+          Logging.warning(`Failed to delete user '${username}': ${userError}`);
+        }
+      }
+
+      // Drop the database
+      const targetDb = client.db(dbName);
+      await targetDb.dropDatabase();
+
+      Logging.info(`Database '${dbName}' deleted successfully`);
+    } catch (error) {
+      Logging.error(`Failed to delete database '${dbName}': ${error}`);
+      throw error;
+    } finally {
+      await client.close();
+    }
+  }
 }
 
 export default new CreateDatabase();

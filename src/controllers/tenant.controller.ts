@@ -8,8 +8,9 @@ import { log } from "console";
 import Logging from "../libraries/logging.library";
 import { DateUtils } from "../utils/dateUtils";
 import ValidateMiddleware from "../middlewares/validate";
-import { tenantCreateSchema , getTenantsSchema, getTenantSchema} from "../validators/tenant.validator";
+import { tenantCreateSchema , getTenantsSchema, getTenantSchema, updateTenantSchema, deleteTenantSchema} from "../validators/tenant.validator";
 import DataSanitizer from "../utils/sanitizeData";
+import { th } from "zod/locales";
 class TenantController extends Controller{
     private tenantService: TenantService;
     constructor() {
@@ -22,20 +23,11 @@ class TenantController extends Controller{
         this.router.post("/create", ValidateMiddleware.getInstance().validate(tenantCreateSchema), this.asyncHandler(this.create));
         this.router.get("/", ValidateMiddleware.getInstance().validate(getTenantsSchema), this.asyncHandler(this.index));
         this.router.get("/:id", ValidateMiddleware.getInstance().validate(getTenantSchema), this.asyncHandler(this.getTenant));
+        this.router.put("/:id", ValidateMiddleware.getInstance().validate(updateTenantSchema), this.asyncHandler(this.update));
+        this.router.delete("/:id", ValidateMiddleware.getInstance().validate(deleteTenantSchema), this.asyncHandler(this.delete));
     }
 
-    // Utility method to remove sensitive fields from tenant data
-    private sanitizeTenantData(tenant: ITenant | ITenant[]) {
-        if (Array.isArray(tenant)) {
-            return tenant.map(t => {
-                const { databasePassword, ...sanitized } = t.toObject ? t.toObject() : t;
-                return sanitized;
-            });
-        } else {
-            const { databasePassword, ...sanitized } = tenant.toObject ? tenant.toObject() : tenant;
-            return sanitized;
-        }
-    }
+   
 
     private create = async (req: Request , res: Response, next: NextFunction)=>  {
 
@@ -202,11 +194,113 @@ class TenantController extends Controller{
                     statusCode: 404
                 });
             }
-            const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(tenant, ['databasePassword','__v','createdAt','updatedAt', 'databaseUser']);
+            const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(tenant, ['databasePassword','__v','createdAt','updatedAt', 'databaseUser','databaseName']);
             return responseResult.sendResponse({
                 res,
                 data: sanitizedTenant,
                 message: "Tenant retrieved successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: (error as Error).message || "Internal Server Error",
+                statusCode: 500
+            });
+        }
+    }
+
+    private update = async (req: Request , res: Response, next: NextFunction)=>  {
+        const { id } = req.params;
+        const {name, subdomain} = req.body;
+        if(!id){
+            return errorResponse.sendError({
+                res,
+                message: "Tenant ID is required",
+                statusCode: 400
+            });
+        }
+        if(!name || !subdomain){
+            return errorResponse.sendError({
+                res,
+                message: "Name and Subdomain are required",
+                statusCode: 400
+            });
+        }
+        const existingTenant = await this.tenantService.findById(id);
+        if(!existingTenant){
+            return errorResponse.sendError({
+                res,
+                message: "Tenant not found",
+                statusCode: 404
+            });
+        }
+        if(existingTenant.name !== name){
+            const isNameTaken = await this.tenantService.checkTenantExists(name);
+            if(isNameTaken){
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: ["name: Name is already in use"],
+                });
+            }
+        }
+        if(existingTenant.subdomain !== subdomain){
+            const isAvailable = await this.tenantService.checkSubdomainAvailability(subdomain);
+            if(!isAvailable){
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: ["subdomain: Subdomain is already in use"],
+                });
+            }
+        }
+        
+
+        try {
+            const updatedTenant = await this.tenantService.update(id, { name, subdomain });
+            const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
+            return responseResult.sendResponse({
+                res,
+                data: sanitizedTenant,
+                message: "Tenant updated successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: (error as Error).message || "Internal Server Error",
+                statusCode: 500
+            });
+        }
+    }
+
+
+    private delete = async (req: Request , res: Response, next: NextFunction)=>  {
+        const { id } = req.params;
+        if(!id){
+            return errorResponse.sendError({
+                res,
+                message: "Tenant ID is required",
+                statusCode: 400
+            });
+        }
+        try {
+            const existingTenant = await this.tenantService.findById(id);
+            if(!existingTenant){
+                return errorResponse.sendError({
+                    res,
+                    message: "Tenant not found",
+                    statusCode: 404
+                });
+            }
+            const deletedCount = await this.tenantService.deleteTenant(id);
+            return responseResult.sendResponse({
+                res,
+                data: { deletedCount },
+                message: "Tenant deleted successfully",
                 statusCode: 200
             });
         } catch (error) {
