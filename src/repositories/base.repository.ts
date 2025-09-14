@@ -18,35 +18,36 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
 
     async create(data: TCreate): Promise<TEntity> {
         try {
-            return this.model.create(data);
+            const created = await this.model.create(data);
+            return created.toObject() as TEntity;
         } catch (error) {
             throw new Error("Create error: " + (error as Error).message);
         }
     }
     async findAll(): Promise<TEntity[]> {
         try {
-            return this.model.find();
+            return await this.model.find().lean().exec() as TEntity[] ;
         } catch (error) {
             throw new Error("Find all error: " + (error as Error).message);
         }
     }
     async findById(id: string): Promise<TEntity | null> {
         try {
-            return this.model.findById(id);
+            return this.model.findById(id).lean().exec() as TEntity | null;
         } catch (error) {
             throw new Error("Find by ID error: " + (error as Error).message);
         }
     }
     async update(id: string, data: TUpdate): Promise<TEntity | null> {
         try {
-            return this.model.findByIdAndUpdate(id, data as any, { new: true }) as TEntity | null;
+            return await this.model.findByIdAndUpdate(id, data as any, { new: true }).lean().exec() as TEntity | null;
         } catch (error) {
             throw new Error("Update error: " + (error as Error).message);
         }
     }
     async delete(id: string): Promise<TEntity | null | { deletedCount?: number; }> {
         try {
-            return this.model.findByIdAndDelete(id);
+            return await this.model.findByIdAndDelete(id);
         } catch (error) {
             throw new Error("Delete error: " + (error as Error).message);
         }
@@ -63,8 +64,8 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
 
             const skip = (page - 1) * limit;
             const [items, total] = await Promise.all([
-                this.model.find(filter as any, projection).sort(sort).skip(skip).limit(limit).lean().exec(),
-                this.model.countDocuments(filter as any).exec()
+               await this.model.find(filter as any, projection).sort(sort).skip(skip).limit(limit).lean().exec(),
+               await this.model.countDocuments(filter as any).exec()
             ]);
 
             return {
