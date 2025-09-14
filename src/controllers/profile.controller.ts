@@ -9,7 +9,7 @@ import { IAddress } from "../models/address.model";
 import AddressRepository from "../repositories/address.repository";
 import { IUser } from "../models/user.model";
 import { comparePassword, hashPassword } from "../utils/passwords";
-import { profileUpdateSchema } from "../validators/user.validator";
+import { profileUpdateSchema, validateEmailUniqueness } from "../validators/user.validator";
 import ValidateMiddleware from "../middlewares/validate";
 
 class ProfileController extends Controller {
@@ -144,18 +144,15 @@ class ProfileController extends Controller {
 
             if (email && email !== user.email) {
                 let existingUser;
-                if (req.isLandlord) {
-                    existingUser = await this.userService.findByEmail(email);
-                } else {
-                    existingUser = await this.userService.findByEmail(req.tenantConnection!, email);
-                }
+                 // Use the new email uniqueness validation
+                const emailValidation = await validateEmailUniqueness(email, req.tenantConnection, req.isLandlord);
                 
-                if (existingUser) {
-                    return errorResponse.sendError({
-                        res,
-                        statusCode: 400,
+                if (!emailValidation.isValid) {
+                    return errorResponse.sendError({ 
+                        res, 
+                        statusCode: 409, 
                         message: "Validation failed",
-                        details: ["email: Email is already in use"],
+                        details: [`email: ${emailValidation.message}`]
                     });
                 }
             }
@@ -171,7 +168,7 @@ class ProfileController extends Controller {
                 if (existingUser) {
                     return errorResponse.sendError({
                         res,
-                        statusCode: 400,
+                        statusCode: 409,
                         message: "Validation failed",
                         details: ["mobile: Mobile number is already in use"],
                     });

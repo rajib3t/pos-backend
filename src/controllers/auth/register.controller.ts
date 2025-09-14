@@ -8,6 +8,8 @@ import { responseResult } from "../../utils/response";
 import {errorResponse} from "../../utils/errorResponse"
 import ValidateMiddleware from '../../middlewares/validate'
 import { registerSchema } from "../../validators/auth.validator";
+import { validateEmailUniqueness } from "../../validators/user.validator";
+import DataSanitizer from "../../utils/sanitizeData";
 class RegisterController extends Controller {
     private userService : UserService
     constructor() {
@@ -46,25 +48,17 @@ class RegisterController extends Controller {
         }
 
         try {
-            // Check if user already exists (landlord or tenant)
-            let existingUser: IUser | null;
+            // Use the new email uniqueness validation
+            const emailValidation = await validateEmailUniqueness(email, req.tenantConnection, req.isLandlord);
             
-            if (req.isLandlord) {
-                existingUser = await this.userService.findByEmail(email);
-            } else {
-                existingUser = await this.userService.findByEmail(req.tenantConnection!, email);
-            }
-
-            if (existingUser) {
+            if (!emailValidation.isValid) {
                 return errorResponse.sendError({ 
                     res, 
                     statusCode: 409, 
                     message: "Validation failed",
-                    details: ["email: Email is already registered"]
-                 });
+                    details: [`email: ${emailValidation.message}`]
+                });
             }
-
-            
 
             const hashedPassword = await hashPassword(password);
 
@@ -85,7 +79,7 @@ class RegisterController extends Controller {
             }
 
             // Remove password from response
-            const userResponse = { ...user.toObject(), password: undefined };
+            const userResponse = DataSanitizer.sanitizeData<IUser>(user.toObject()  , ['password','_id','__v','createdAt','updatedAt']);
 
             Logging.info(`User registered in ${this.getContextInfo(req)}: ${email}`);
             

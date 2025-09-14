@@ -111,7 +111,7 @@ class LoginController extends Controller {
 
            
             
-            Logging.info(`User logged in from ${this.getContextInfo(req)}: ${email}`);
+            
             
             return responseResult.sendResponse({ res, data: loginData, message: "Login successful" });
         } catch (error) {
