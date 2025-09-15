@@ -9,10 +9,12 @@ import { DateUtils } from "../utils/dateUtils";
 import UserService from "../services/user.service";
 import DataSanitizer from "../utils/sanitizeData";
 import { IUser } from "../models/user.model";
+
 class TenantUserController extends Controller{
      private tenantService: TenantService;
      private connectionService: TenantConnectionService;
      private userService: UserService;
+  
     constructor() {
         super()
         this.initializeRoutes();
@@ -116,8 +118,8 @@ class TenantUserController extends Controller{
                 sort
             });
 
-            await this.connectionService.closeTenantConnection(tenant.subdomain);
-
+           await this.connectionService.closeAllConnections();
+            
             if (!result) {
 
                 return errorResponse.sendError({

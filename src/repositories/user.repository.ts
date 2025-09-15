@@ -17,7 +17,12 @@ export class UserRepository extends BaseRepository<IUser> {
     
 
     constructor(connection?: Connection) {
-        super(User, 'User', connection);
+        if(!connection) {
+            super(User);
+        }else{
+            super(User, 'User', connection);
+        }
+       
         
         
        

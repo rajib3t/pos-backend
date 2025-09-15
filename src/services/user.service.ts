@@ -7,16 +7,17 @@ import { Connection } from 'mongoose';
 import { TenantModelFactory } from '../utils/tenantModelFactory';
 import Logging from '../libraries/logging.library';
 import { PaginatedResult, PaginationOptions } from '@/repositories/repository';
-
+import database, { IDatabase } from "../database";
 class UserService {
    
     private userRepository: UserRepository;
     private addressRepository: AddressRepository;
     private static instance: UserService;
-    
+    private database!: IDatabase;
     private constructor() {
         this.userRepository = new UserRepository();
         this.addressRepository = new AddressRepository();
+        this.database = database;
     }
     
     public static getInstance(): UserService {
@@ -59,6 +60,7 @@ class UserService {
                 throw error;
             }
         } else {
+            this.database.connect();
             // Original version (main database) - for landlord requests
             return this.userRepository.create(connectionOrData);
         }
@@ -288,20 +290,18 @@ class UserService {
     public async getUserProfile(userId: string): Promise<IProfileData | null>;
     public async getUserProfile(tenantConnection: Connection, id: string): Promise<IProfileData | null>;
     public async getUserProfile(connectionOrId: Connection | string, id?: string): Promise<IProfileData | null> {
-       
-        
         if (connectionOrId instanceof Connection) {
-            // Tenant-aware version
+            // Tenant-aware version - create local repository instance to avoid modifying class property
             try {
-                const UserModel = TenantModelFactory.getUserModel(connectionOrId);
-                const user = await UserModel.findById(id!);
+                const tenantUserRepository = new UserRepository(connectionOrId);
+                const user = await tenantUserRepository.findById(id!);
                 return user as IProfileData;
             } catch (error) {
                 Logging.error(`Failed to get user profile: ${error}`);
                 throw error;
             }
         } else {
-            // Original version
+            // Original version - uses main database
             const user = await this.userRepository.getUserProfile(connectionOrId);
             if (!user) {
                 return null;
@@ -315,10 +315,9 @@ class UserService {
     public async  getUsersWithPagination(tenantConnection?: Connection, options?: PaginationOptions<IUser>) :Promise<PaginatedResult<IUser> | null>;
     public async  getUsersWithPagination(connectionOrOptions?: Connection | PaginationOptions<IUser>, optionsArg?: PaginationOptions<IUser>) :Promise<PaginatedResult<IUser> | null> {
         if (connectionOrOptions instanceof Connection) {
-            // Using tenant connection
-            
-            this.userRepository = new UserRepository(connectionOrOptions);
-            return this.userRepository.findPaginated(optionsArg || {});
+            // Using tenant connection - create local repository instance to avoid modifying class property
+            const tenantUserRepository = new UserRepository(connectionOrOptions);
+            return tenantUserRepository.findPaginated(optionsArg || {});
         } else {
             // Using main database (backward compatibility)
             return this.userRepository.findPaginated(connectionOrOptions)

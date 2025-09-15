@@ -11,10 +11,11 @@ import { IUser } from "../models/user.model";
 import { comparePassword, hashPassword } from "../utils/passwords";
 import { profileUpdateSchema, validateEmailUniqueness } from "../validators/user.validator";
 import ValidateMiddleware from "../middlewares/validate";
+import database, { IDatabase } from "../database";
 
 class ProfileController extends Controller {
      private userService: UserService;
-
+        private database!: IDatabase;
      constructor() {
         super();
         this.initializeRoutes();
@@ -66,7 +67,6 @@ class ProfileController extends Controller {
        
         try{
             let userProfile;
-            const addressRepository = this.getAddressRepository(req);
 
             if (req.isLandlord) {
                 // Landlord request - use main database
@@ -84,19 +84,19 @@ class ProfileController extends Controller {
                 });
             }
 
-            const userAddress = await addressRepository.findByUserId(userId as string);
+            //const userAddress = await addressRepository.findByUserId(userId as string);
 
             const userProfileData = {
                 id: userProfile.id,
                 email: userProfile.email,
                 name: userProfile.name,
                 mobile: userProfile.mobile,
-                address: userAddress ? {
-                    street: userAddress.street,
-                    city: userAddress.city,
-                    state: userAddress.state,
-                    zip: userAddress.zip
-                } : null
+                // address: userAddress ? {
+                //     street: userAddress.street,
+                //     city: userAddress.city,
+                //     state: userAddress.state,
+                //     zip: userAddress.zip
+                // } : null
             }
 
             Logging.info(`Profile fetched for ${this.getContextInfo(req)}: ${userProfile.email}`);
