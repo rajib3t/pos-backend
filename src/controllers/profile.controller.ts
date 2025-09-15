@@ -84,19 +84,19 @@ class ProfileController extends Controller {
                 });
             }
 
-            //const userAddress = await addressRepository.findByUserId(userId as string);
+            const userAddress = await addressRepository.findByUserId(userId as string);
 
             const userProfileData = {
                 id: userProfile.id,
                 email: userProfile.email,
                 name: userProfile.name,
                 mobile: userProfile.mobile,
-                // address: userAddress ? {
-                //     street: userAddress.street,
-                //     city: userAddress.city,
-                //     state: userAddress.state,
-                //     zip: userAddress.zip
-                // } : null
+                address: userAddress ? {
+                    street: userAddress.street,
+                    city: userAddress.city,
+                    state: userAddress.state,
+                    zip: userAddress.zip
+                } : null
             }
 
             Logging.info(`Profile fetched for ${this.getContextInfo(req)}: ${userProfile.email}`);

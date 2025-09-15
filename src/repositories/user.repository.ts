@@ -4,6 +4,7 @@ import User ,{ IUser,  } from '../models/user.model';
 import { PaginatedResult, PaginationOptions, Repository } from './repository';
 import BaseRepository from './base.repository';
 import { Connection } from 'mongoose';
+import AddressModel from '../models/address.model';
 
 export interface IProfileData extends IUser {
     address?: {
@@ -41,6 +42,26 @@ export class UserRepository extends BaseRepository<IUser> {
 
     async getUserProfile(userId: string): Promise<IUser | null> {
         return this.model.findById(userId).lean().exec();
+    }
+
+    async getUserProfileWithAddress(userId: string): Promise<IProfileData | null> {
+        const user = await this.model.findById(userId).lean().exec();
+        if (!user) {
+            return null;
+        }
+        
+        // For main database, use the imported Address model
+        const address = await AddressModel.findOne({ userId }).lean().exec();
+        
+        return {
+            ...user,
+            address: address ? {
+                street: address.street,
+                city: address.city,
+                state: address.state,
+                zip: address.zip
+            } : undefined
+        } as IProfileData;
     }
 
     

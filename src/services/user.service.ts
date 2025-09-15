@@ -295,18 +295,32 @@ class UserService {
             try {
                 const tenantUserRepository = new UserRepository(connectionOrId);
                 const user = await tenantUserRepository.findById(id!);
-                return user as IProfileData;
+                
+                if (!user) {
+                    return null;
+                }
+
+                // Get address using tenant-specific Address model
+                const AddressModel = TenantModelFactory.getAddressModel(connectionOrId);
+                const address = await AddressModel.findOne({ userId: id! }).lean().exec();
+
+                return {
+                    ...user,
+                    address: address ? {
+                        street: address.street,
+                        city: address.city,
+                        state: address.state,
+                        zip: address.zip
+                    } : undefined
+                } as IProfileData;
             } catch (error) {
                 Logging.error(`Failed to get user profile: ${error}`);
                 throw error;
             }
         } else {
-            // Original version - uses main database
-            const user = await this.userRepository.getUserProfile(connectionOrId);
-            if (!user) {
-                return null;
-            }
-            return user as IProfileData;
+            // Original version - uses main database with address population
+            const user = await this.userRepository.getUserProfileWithAddress(connectionOrId);
+            return user;
         }
     }
 
