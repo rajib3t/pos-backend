@@ -3,7 +3,7 @@ import { TenantRepository } from '../repositories/tenant.repository';
 import CreateDatabase from '../database/create';
 import { TenantConnectionManager } from '../database/tenantConnection';
 import Logging from '../libraries/logging.library';
-import { PaginatedResult, PaginationOptions } from '@/repositories/repository';
+import { PaginatedResult, PaginationOptions, QueryOptions } from '@/repositories/repository';
 export default class TenantService {
     private static instance: TenantService;
     private tenantRepository: TenantRepository;
@@ -25,12 +25,34 @@ export default class TenantService {
         return this.tenantRepository.create(tenantData);
     }
 
-    public async findById(id: string): Promise<ITenant | null> {
-        return this.tenantRepository.findById(id);
+    public async findById(id: string, options?: QueryOptions): Promise<ITenant | null> {
+        return this.tenantRepository.findById(id, options);
     }
 
-    public async findAll(): Promise<ITenant[]> {
-        return this.tenantRepository.findAll();
+    public async findByIdWithRelations(id: string): Promise<ITenant | null> {
+        const options: QueryOptions = {
+            populate: [
+                { path: 'createdBy', select: 'name email' },
+                { path: 'updatedBy', select: 'name email' },
+                { path: 'settings' }
+            ]
+        };
+        return this.tenantRepository.findById(id, options);
+    }
+
+    public async findAll(options?: QueryOptions): Promise<ITenant[]> {
+        return this.tenantRepository.findAll(options);
+    }
+
+    public async findAllWithRelations(): Promise<ITenant[]> {
+        const options: QueryOptions = {
+            populate: [
+                { path: 'createdBy', select: 'name email' },
+                { path: 'updatedBy', select: 'name email' },
+                { path: 'settings' }
+            ]
+        };
+        return this.tenantRepository.findAll(options);
     }
 
     public async update(id: string, tenantData: Partial<ITenant>): Promise<ITenant> {
@@ -96,11 +118,8 @@ export default class TenantService {
 
     public async checkSubdomainAvailability(subdomain: string): Promise<boolean> {
         try {
-            const existingTenant = await this.tenantRepository.findAll();
-            const isAvailable = !existingTenant.some(tenant => 
-                tenant.subdomain.toLowerCase() === subdomain.toLowerCase()
-            );
-            return isAvailable;
+            const existingTenant = await this.tenantRepository.findBySubdomain(subdomain);
+            return !existingTenant;
         } catch (error) {
             Logging.error(`Error checking subdomain availability: ${error}`);
             throw error;
@@ -109,11 +128,10 @@ export default class TenantService {
 
     public async checkTenantExists(name: string): Promise<boolean> {
         try {
-            const existingTenant = await this.tenantRepository.findAll();
-            const exists = existingTenant.some(tenant => 
-                tenant.name.toLowerCase() === name.toLowerCase()
-            );
-            return exists;
+            const existingTenant = await this.tenantRepository.findOne({ 
+                name: { $regex: new RegExp(`^${name}$`, 'i') } 
+            });
+            return !!existingTenant;
         } catch (error) {
             Logging.error(`Error checking tenant existence: ${error}`);
             throw error;
@@ -155,12 +173,17 @@ export default class TenantService {
     /**
      * Get tenant by subdomain
      */
-    public async getTenantBySubdomain(subdomain: string): Promise<ITenant | null> {
+    public async getTenantBySubdomain(subdomain: string, withRelations: boolean = true): Promise<ITenant | null> {
         try {
-            const tenants = await this.tenantRepository.findAll();
-            return tenants.find(tenant => 
-                tenant.subdomain.toLowerCase() === subdomain.toLowerCase()
-            ) || null;
+            const options: QueryOptions | undefined = withRelations ? {
+                populate: [
+                    { path: 'createdBy', select: 'name email' },
+                    { path: 'updatedBy', select: 'name email' },
+                    { path: 'settings' }
+                ]
+            } : undefined;
+
+            return await this.tenantRepository.findBySubdomain(subdomain.toLowerCase(), options);
         } catch (error) {
             Logging.error(`Error getting tenant by subdomain: ${error}`);
             throw error;
@@ -221,6 +244,42 @@ export default class TenantService {
 
 
     public async getTenantsWithPagination(options?: PaginationOptions<ITenant>): Promise<PaginatedResult<ITenant>> {
+        // Set default population for createdBy and updatedBy relations if not provided
+        const defaultPopulate = [
+            { path: 'createdBy', select: 'name email' },
+            { path: 'updatedBy', select: 'name email' },
+            { path: 'settings' }
+        ];
+
+        const paginationOptions: PaginationOptions<ITenant> = {
+            ...options,
+            populate: options?.populate || defaultPopulate
+        };
+        
+        return this.tenantRepository.findPaginated(paginationOptions);
+    }
+
+    /**
+     * Get tenants with pagination and custom filtering/population
+     */
+    public async getTenantsWithAdvancedPagination(
+        filter?: Partial<Record<keyof ITenant | string, any>>,
+        page: number = 1,
+        limit: number = 10,
+        sort?: Record<string, 1 | -1>,
+        populate?: string | string[] | { path: string; select?: string; populate?: any }[]
+    ): Promise<PaginatedResult<ITenant>> {
+        const options: PaginationOptions<ITenant> = {
+            filter,
+            page,
+            limit,
+            sort: sort || { createdAt: -1 },
+            populate: populate || [
+                { path: 'createdBy', select: 'name email' },
+                { path: 'updatedBy', select: 'name email' },
+                { path: 'settings' }
+            ]
+        };
         
         return this.tenantRepository.findPaginated(options);
     }

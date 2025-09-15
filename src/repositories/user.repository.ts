@@ -17,7 +17,9 @@ export class UserRepository extends BaseRepository<IUser> {
     
 
     constructor(connection?: Connection) {
-        super(User, connection);
+        super(User, 'User', connection);
+        
+        
        
     }
 

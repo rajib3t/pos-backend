@@ -1,19 +1,39 @@
 
-import { PaginatedResult, PaginationOptions, Repository } from "./repository";
-import { Model, Connection } from "mongoose";
+import { PaginatedResult, PaginationOptions, Repository, QueryOptions } from "./repository";
+import { Model, Connection, Query } from "mongoose";
 import { TenantModelFactory } from "../utils/tenantModelFactory";
 
 class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repository<TEntity, TCreate, TUpdate>{
     public model: Model<TEntity>;
-    constructor(model : Model<TEntity>,  connection?: Connection) {
+    constructor(model : Model<TEntity>, modelName?: string, connection?: Connection) {
         super();
         if (connection) {
             // Use tenant-specific connection
-            this.model = TenantModelFactory.getTenantModel<TEntity>(connection, 'Address', model.schema);
+            this.model = TenantModelFactory.getTenantModel<TEntity>(connection, modelName as string, model.schema);
         } else {
             // Use default master database connection
             this.model = model;
         }
+    }
+
+    /**
+     * Helper method to apply populate to a query
+     */
+    private applyPopulate<T>(query: Query<T, any>, populate?: string | string[] | { path: string; select?: string; populate?: any }[]): Query<T, any> {
+        if (populate) {
+            if (Array.isArray(populate)) {
+                populate.forEach(pop => {
+                    if (typeof pop === 'string') {
+                        query = query.populate(pop);
+                    } else {
+                        query = query.populate(pop);
+                    }
+                });
+            } else if (typeof populate === 'string') {
+                query = query.populate(populate);
+            }
+        }
+        return query;
     }
 
     async create(data: TCreate): Promise<TEntity> {
@@ -24,16 +44,46 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
             throw new Error("Create error: " + (error as Error).message);
         }
     }
-    async findAll(): Promise<TEntity[]> {
+    async findAll(options?: QueryOptions): Promise<TEntity[]> {
         try {
-            return await this.model.find().lean().exec() as TEntity[] ;
+            const {
+                populate,
+                projection = {},
+                lean = true
+            } = options || {};
+
+            let query = this.model.find({}, projection);
+            
+            // Apply populate if specified
+            query = this.applyPopulate(query, populate);
+            
+            if (lean) {
+                return await query.lean().exec() as TEntity[];
+            } else {
+                return await query.exec() as TEntity[];
+            }
         } catch (error) {
             throw new Error("Find all error: " + (error as Error).message);
         }
     }
-    async findById(id: string): Promise<TEntity | null> {
+    async findById(id: string, options?: QueryOptions): Promise<TEntity | null> {
         try {
-            return this.model.findById(id).lean().exec() as TEntity | null;
+            const {
+                populate,
+                projection = {},
+                lean = true
+            } = options || {};
+
+            let query = this.model.findById(id, projection);
+            
+            // Apply populate if specified
+            query = this.applyPopulate(query, populate);
+            
+            if (lean) {
+                return await query.lean().exec() as TEntity | null;
+            } else {
+                return await query.exec() as TEntity | null;
+            }
         } catch (error) {
             throw new Error("Find by ID error: " + (error as Error).message);
         }
@@ -59,12 +109,20 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
                 page = 1,
                 limit = 10,
                 sort = { createdAt: -1 },
-                projection = {}
+                projection = {},
+                populate
             } = options || {};
 
             const skip = (page - 1) * limit;
+            
+            // Build the query for items
+            let itemsQuery = this.model.find(filter as any, projection).sort(sort).skip(skip).limit(limit);
+            
+            // Apply populate if specified
+            itemsQuery = this.applyPopulate(itemsQuery, populate);
+
             const [items, total] = await Promise.all([
-               await this.model.find(filter as any, projection).sort(sort).skip(skip).limit(limit).lean().exec(),
+               await itemsQuery.lean().exec(),
                await this.model.countDocuments(filter as any).exec()
             ]);
 
@@ -77,6 +135,70 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
             };
         } catch (error) {
             throw new Error("Find paginated error: " + (error as Error).message);
+        }
+    }
+
+    /**
+     * Find one document with populate support
+     */
+    async findOne(filter: Partial<Record<keyof TEntity | string, any>>, options?: QueryOptions): Promise<TEntity | null> {
+        try {
+            const {
+                populate,
+                projection = {},
+                lean = true
+            } = options || {};
+
+            let query = this.model.findOne(filter as any, projection);
+            
+            // Apply populate if specified
+            query = this.applyPopulate(query, populate);
+            
+            if (lean) {
+                return await query.lean().exec() as TEntity | null;
+            } else {
+                return await query.exec() as TEntity | null;
+            }
+        } catch (error) {
+            throw new Error("Find one error: " + (error as Error).message);
+        }
+    }
+
+    /**
+     * Find multiple documents with populate support and filtering
+     */
+    async findMany(filter: Partial<Record<keyof TEntity | string, any>>, options?: QueryOptions & { sort?: Record<string, 1 | -1>; limit?: number }): Promise<TEntity[]> {
+        try {
+            const {
+                populate,
+                projection = {},
+                lean = true,
+                sort,
+                limit
+            } = options || {};
+
+            let query = this.model.find(filter as any, projection);
+            
+            // Apply populate if specified
+            query = this.applyPopulate(query, populate);
+            
+            // Apply sort if specified
+            if (sort) {
+                query = query.sort(sort);
+            }
+            
+            // Apply limit if specified
+            if (limit) {
+                query = query.limit(limit);
+            }
+            
+            if (lean) {
+                return await query.lean().exec() as TEntity[];
+            } else {
+                return await query.exec() as TEntity[];
+            }
+        } catch (error) {
+            throw new Error("Find many error: " + (error as Error).message);
         }
     }
 }

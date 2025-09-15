@@ -4,13 +4,13 @@ import { responseResult } from "../utils/response";
 import { errorResponse } from "../utils/errorResponse";
 import TenantService from "../services/tenant.service";
 import { ITenant } from "../models/tenant.model";
-import { log } from "console";
+
 import Logging from "../libraries/logging.library";
 import { DateUtils } from "../utils/dateUtils";
 import ValidateMiddleware from "../middlewares/validate";
 import { tenantCreateSchema , getTenantsSchema, getTenantSchema, updateTenantSchema, deleteTenantSchema} from "../validators/tenant.validator";
 import DataSanitizer from "../utils/sanitizeData";
-import { th } from "zod/locales";
+
 class TenantController extends Controller{
     private tenantService: TenantService;
     constructor() {
@@ -30,7 +30,7 @@ class TenantController extends Controller{
    
 
     private create = async (req: Request , res: Response, next: NextFunction)=>  {
-
+        const userId = req.userId; // Assuming req.user is populated by authentication middleware
         const {name, subdomain} = req.body;
         if(!name || !subdomain){
             return errorResponse.sendError({
@@ -60,7 +60,8 @@ class TenantController extends Controller{
         try {
             const newTenant: Partial<ITenant> = {
                 name,
-                subdomain
+                subdomain,
+                createdBy: userId,
             }
             const createdTenant = await this.tenantService.registerTenant(newTenant);
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
@@ -84,7 +85,20 @@ class TenantController extends Controller{
 
     private index = async (req: Request , res: Response, next: NextFunction)=>  {
 
-        const { page, limit, name, subdomain, createdAtFrom, createdAtTo, sortBy, sortOrder, sortField, sortDirection } = req.query;
+        const { 
+            page, 
+            limit, 
+            name, 
+            subdomain, 
+            createdAtFrom, 
+            createdAtTo, 
+            sortBy, 
+            sortOrder, 
+            sortField, 
+            sortDirection,
+            populate,
+            includeRelations = 'true'
+        } = req.query;
         
         try {
             // Build filter object based on query parameters
@@ -146,17 +160,36 @@ class TenantController extends Controller{
                 sort.createdAt = -1; // Default sort by creation date descending
             }
 
+            // Build populate options
+            let populateOptions: any = undefined;
             
+            if (includeRelations === 'true' && !populate) {
+                // Default population
+                populateOptions = [
+                    { path: 'createdBy', select: 'name email' },
+                    
+                ];
+            } else if (populate && includeRelations === 'true') {
+                // Custom populate from query parameter (JSON string expected)
+                try {
+                    populateOptions = JSON.parse(populate as string);
+                } catch (parseError) {
+                    // If parsing fails, use populate as comma-separated string
+                    populateOptions = (populate as string).split(',').map(field => field.trim());
+                }
+            }
+
             const result = await this.tenantService.getTenantsWithPagination({
                 page: Number(page) || 1,
                 limit: Number(limit) || 10,
                 filter,
-                sort
+                sort,
+                populate: populateOptions
             });
 
             // Sanitize the tenant data to remove sensitive fields
-            const sanitizedTenants = DataSanitizer.sanitizeData<ITenant[]>(result.items, ['databasePassword']);
-
+            const sanitizedTenants = DataSanitizer.sanitizeData<ITenant[]>(result.items, ['databasePassword','updatedBy','__v']);
+            
             return responseResult.sendResponse({
                 res,
                 data: {
@@ -186,7 +219,7 @@ class TenantController extends Controller{
             });
         }
         try {
-            const tenant = await this.tenantService.findById(id);
+            const tenant = await this.tenantService.findByIdWithRelations(id);
             if(!tenant){
                 return errorResponse.sendError({
                     res,
@@ -211,6 +244,7 @@ class TenantController extends Controller{
     }
 
     private update = async (req: Request , res: Response, next: NextFunction)=>  {
+        const userId = req.userId; // Assuming req.user is populated by authentication middleware
         const { id } = req.params;
         const {name, subdomain} = req.body;
         if(!id){
@@ -227,7 +261,7 @@ class TenantController extends Controller{
                 statusCode: 400
             });
         }
-        const existingTenant = await this.tenantService.findById(id);
+        const existingTenant = await this.tenantService.findByIdWithRelations(id);
         if(!existingTenant){
             return errorResponse.sendError({
                 res,
@@ -260,7 +294,7 @@ class TenantController extends Controller{
         
 
         try {
-            const updatedTenant = await this.tenantService.update(id, { name, subdomain });
+            const updatedTenant = await this.tenantService.update(id, { name, subdomain, updatedBy: userId });
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
             return responseResult.sendResponse({
                 res,
@@ -288,7 +322,7 @@ class TenantController extends Controller{
             });
         }
         try {
-            const existingTenant = await this.tenantService.findById(id);
+            const existingTenant = await this.tenantService.findByIdWithRelations(id);
             if(!existingTenant){
                 return errorResponse.sendError({
                     res,

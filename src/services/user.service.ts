@@ -6,6 +6,7 @@ import  AddressRepository  from '../repositories/address.repository';
 import { Connection } from 'mongoose';
 import { TenantModelFactory } from '../utils/tenantModelFactory';
 import Logging from '../libraries/logging.library';
+import { PaginatedResult, PaginationOptions } from '@/repositories/repository';
 
 class UserService {
    
@@ -307,6 +308,22 @@ class UserService {
             }
             return user as IProfileData;
         }
+    }
+
+
+    public async  getUsersWithPagination(options?: PaginationOptions<IUser>) :Promise<PaginatedResult<IUser> | null>;
+    public async  getUsersWithPagination(tenantConnection?: Connection, options?: PaginationOptions<IUser>) :Promise<PaginatedResult<IUser> | null>;
+    public async  getUsersWithPagination(connectionOrOptions?: Connection | PaginationOptions<IUser>, optionsArg?: PaginationOptions<IUser>) :Promise<PaginatedResult<IUser> | null> {
+        if (connectionOrOptions instanceof Connection) {
+            // Using tenant connection
+            
+            this.userRepository = new UserRepository(connectionOrOptions);
+            return this.userRepository.findPaginated(optionsArg || {});
+        } else {
+            // Using main database (backward compatibility)
+            return this.userRepository.findPaginated(connectionOrOptions)
+        }
+
     }
 }
 

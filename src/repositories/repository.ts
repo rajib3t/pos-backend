@@ -4,6 +4,13 @@ export interface PaginationOptions<TEntity> {
     limit?: number;
     sort?: Record<string, 1 | -1>;
     projection?: Record<string, 0 | 1>;
+    populate?: string | string[] | { path: string; select?: string; populate?: any }[];
+}
+
+export interface QueryOptions {
+    populate?: string | string[] | { path: string; select?: string; populate?: any }[];
+    projection?: Record<string, 0 | 1>;
+    lean?: boolean;
 }
 
 export interface PaginatedResult<TEntity> {
@@ -23,12 +30,12 @@ export abstract class Repository<TEntity, TCreate = Partial<TEntity>, TUpdate = 
     /**
      * Get all entities
      */
-    abstract findAll(): Promise<TEntity[]>;
+    abstract findAll(options?: QueryOptions): Promise<TEntity[]>;
 
     /**
      * Get entity by id
      */
-    abstract findById(id: string): Promise<TEntity | null>;
+    abstract findById(id: string, options?: QueryOptions): Promise<TEntity | null>;
 
     /**
      * Update entity by id

@@ -1,14 +1,19 @@
 import { Router } from "express";
 import TenantController from "../controllers/tenant.controller";
 import AuthMiddleware from "../middlewares/authMiddleware";
-
+import TenantUserController from "../controllers/tenant-users.controller";
 const tenantRouter: Router = Router();
 
 // Define default routes configuration
 const defaultRoutes  = [
     {
         path: '/',
-        route: TenantController
+        route: TenantController,
+
+    },
+    {
+        path: "/",
+        route: TenantUserController,
     }
 ];
 
