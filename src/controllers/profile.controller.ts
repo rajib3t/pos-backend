@@ -67,7 +67,7 @@ class ProfileController extends Controller {
        
         try{
             let userProfile;
-
+             const addressRepository = this.getAddressRepository(req);
             if (req.isLandlord) {
                 // Landlord request - use main database
                 userProfile = await this.userService.getUserProfile(userId as string);

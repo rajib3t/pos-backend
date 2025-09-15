@@ -9,6 +9,8 @@ import { DateUtils } from "../utils/dateUtils";
 import UserService from "../services/user.service";
 import DataSanitizer from "../utils/sanitizeData";
 import { IUser } from "../models/user.model";
+import { hashPassword } from "../utils/passwords";
+import { th } from "zod/locales";
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
@@ -25,6 +27,7 @@ class TenantUserController extends Controller{
 
     private initializeRoutes() {
         this.router.get('/:tenantId/users', this.asyncHandler(this.getUsers.bind(this)));
+        this.router.post('/:tenantId/users', this.asyncHandler(this.create.bind(this)));
     }
 
     private getUsers = async (req: Request, res: Response, next: NextFunction) => {
@@ -118,7 +121,7 @@ class TenantUserController extends Controller{
                 sort
             });
 
-           await this.connectionService.closeAllConnections();
+          
             
             if (!result) {
 
@@ -155,6 +158,80 @@ class TenantUserController extends Controller{
             });
         }
 
+    }
+
+
+    private create = async (req: Request, res: Response, next: NextFunction) => {
+        const tenantId = req.params.tenantId;
+        const userData = req.body;
+        if (!tenantId) {
+           return errorResponse.sendError({
+                res,
+                message: "Tenant ID is required",
+                statusCode: 400
+            });
+
+        }
+
+
+
+        try {
+
+            const tenant = await this.tenantService.findById(tenantId);
+            if (!tenant) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Tenant not found",
+                    statusCode: 404
+                });
+            }
+            const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            // create a connection to the tenant's database
+            const existingUser = await this.userService.findByEmail(connection.connection, userData.email);
+            if (existingUser) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: ["email: Email is already in use"],
+                });
+            }
+
+            const existingUserByMobile = await this.userService.findByMobile(connection.connection, userData.mobile);
+            if (existingUserByMobile) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: ["mobile: Mobile number is already in use"],
+                });
+            }
+            const hashedPassword = await hashPassword(userData.password);
+            const user = await this.userService.create(connection.connection, { ...userData, password: hashedPassword });
+            if (!user) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Failed to create user",
+                    statusCode: 500
+                });
+            }
+            // Sanitize the user data to remove sensitive fields
+            const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
+              return responseResult.sendResponse({  
+                res,
+                data: sanitizedUser,
+                message: "User created successfully",
+                statusCode: 201
+            });
+        } catch (error) {
+            Logging.error("Error creating user:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Failed to create user",
+                statusCode: 500,
+                details: error
+            });
+        }
     }
 
 
