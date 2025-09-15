@@ -5,6 +5,7 @@ import { TenantConnectionManager } from '../database/tenantConnection';
 import { errorResponse } from '../utils/errorResponse';
 import { Connection } from 'mongoose';
 import Logging from '../libraries/logging.library';
+import EventService from '../events/EventService';
 
 // Extend Express Request interface to include tenant context
 declare global {
@@ -70,6 +71,16 @@ export class TenantMiddleware {
             req.tenant = tenant;
             req.tenantConnection = tenantConnection;
             req.subdomain = subdomain;
+
+            // Emit tenant connection established event
+            EventService.emitCustomEvent('tenant.connection.established', {
+                tenantId: tenant._id,
+                subdomain: tenant.subdomain,
+                connectionStatus: tenantConnection.readyState
+            }, {
+                tenantId: tenant._id as string,
+                subdomain: tenant.subdomain
+            });
 
             Logging.info(`Tenant context set for: ${tenant.name} (${subdomain})`);
             

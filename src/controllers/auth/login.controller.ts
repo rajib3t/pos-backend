@@ -9,6 +9,7 @@ import { responseResult } from "../../utils/response";
 import {errorResponse} from "../../utils/errorResponse"
 import ValidateMiddleware from '../../middlewares/validate'
 import { loginSchema } from "../../validators/auth.validator";
+import EventService from "../../events/EventService";
 class LoginController extends Controller {
     private userService: UserService;
     private tokenService: TokenService;
@@ -65,11 +66,31 @@ class LoginController extends Controller {
             }
 
             if (!user || !user.password) {
+                // Emit failed login attempt
+                EventService.emitLoginAttempt({
+                    email,
+                    success: false,
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    tenantId: req.tenant?._id as string,
+                    errorReason: 'User not found'
+                }, EventService.createContextFromRequest(req));
+
                 return errorResponse.sendError({ res, statusCode: 401, message: "Invalid email or password" });
             }
 
             const isPasswordValid = await comparePassword(password, user.password);
             if (!isPasswordValid) {
+                // Emit failed login attempt
+                EventService.emitLoginAttempt({
+                    email,
+                    success: false,
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    tenantId: req.tenant?._id as string,
+                    errorReason: 'Invalid password'
+                }, EventService.createContextFromRequest(req));
+
                 return errorResponse.sendError({ res, statusCode: 401, message: "Password is incorrect" });
             }
 
@@ -109,8 +130,31 @@ class LoginController extends Controller {
             res.cookie("refreshToken", refreshToken, options);
             res.cookie("accessToken", accessToken, options);
 
-           
-            
+            // Emit successful login event
+            EventService.emitUserLogin({
+                userId: user._id as string,
+                email: user.email,
+                loginTime: new Date(),
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                tenantId: req.tenant?._id as string
+            }, EventService.createContextFromRequest(req));
+
+            // Emit successful login attempt
+            EventService.emitLoginAttempt({
+                email,
+                success: true,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                tenantId: req.tenant?._id as string
+            }, EventService.createContextFromRequest(req));
+
+            // Emit token creation event
+            EventService.emitTokenCreated({
+                userId: user._id as string,
+                type: 'access',
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+            }, EventService.createContextFromRequest(req));
             
             
             return responseResult.sendResponse({ res, data: loginData, message: "Login successful" });
@@ -135,6 +179,12 @@ class LoginController extends Controller {
             await this.tokenService.invalidateRefreshToken(incomingRefreshToken, connection);
             res.clearCookie("refreshToken");
             res.clearCookie("accessToken");
+
+            // Emit user logout event
+            EventService.emitUserLogout(
+                req.userId || 'unknown',
+                EventService.createContextFromRequest(req)
+            );
 
             Logging.info(`User logged out from ${this.getContextInfo(req)}`);
             return responseResult.sendResponse({ res, message: "Logout successful" });

@@ -10,6 +10,7 @@ import ValidateMiddleware from '../../middlewares/validate'
 import { registerSchema } from "../../validators/auth.validator";
 import { validateEmailUniqueness } from "../../validators/user.validator";
 import DataSanitizer from "../../utils/sanitizeData";
+import EventService from "../../events/EventService";
 class RegisterController extends Controller {
     private userService : UserService
     constructor() {
@@ -80,6 +81,15 @@ class RegisterController extends Controller {
 
             // Remove password from response
             const userResponse = DataSanitizer.sanitizeData<IUser>(user.toObject()  , ['password','_id','__v','createdAt','updatedAt']);
+
+            // Emit user registration event
+            EventService.emitUserRegistered({
+                userId: user._id as string,
+                email: user.email,
+                name: user.name,
+                tenantId: req.tenant?._id as string,
+                isLandlord: !!req.isLandlord
+            }, EventService.createContextFromRequest(req));
 
             Logging.info(`User registered in ${this.getContextInfo(req)}: ${email}`);
             

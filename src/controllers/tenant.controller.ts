@@ -10,6 +10,7 @@ import { DateUtils } from "../utils/dateUtils";
 import ValidateMiddleware from "../middlewares/validate";
 import { tenantCreateSchema , getTenantsSchema, getTenantSchema, updateTenantSchema, deleteTenantSchema} from "../validators/tenant.validator";
 import DataSanitizer from "../utils/sanitizeData";
+import EventService from "../events/EventService";
 
 class TenantController extends Controller{
     private tenantService: TenantService;
@@ -65,6 +66,16 @@ class TenantController extends Controller{
             }
             const createdTenant = await this.tenantService.registerTenant(newTenant);
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
+
+            // Emit tenant creation event
+            EventService.emitTenantCreated({
+                tenantId: createdTenant._id as string,
+                name: createdTenant.name,
+                subdomain: createdTenant.subdomain,
+                databaseName: createdTenant.databaseName,
+                databaseUser: createdTenant.databaseUser,
+                createdBy: userId!
+            }, EventService.createContextFromRequest(req));
 
             return responseResult.sendResponse({
                 res,
@@ -296,6 +307,16 @@ class TenantController extends Controller{
         try {
             const updatedTenant = await this.tenantService.update(id, { name, subdomain, updatedBy: userId });
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
+            
+            // Emit tenant update event
+            EventService.emitTenantUpdated({
+                tenantId: id,
+                previousData: existingTenant,
+                newData: updatedTenant,
+                updatedFields: ['name', 'subdomain'],
+                updatedBy: userId!
+            }, EventService.createContextFromRequest(req));
+
             return responseResult.sendResponse({
                 res,
                 data: sanitizedTenant,
@@ -331,6 +352,14 @@ class TenantController extends Controller{
                 });
             }
             const deletedCount = await this.tenantService.deleteTenant(id);
+            
+            // Emit tenant deletion event
+            EventService.emitTenantDeleted(
+                id, 
+                req.userId!, 
+                EventService.createContextFromRequest(req)
+            );
+
             return responseResult.sendResponse({
                 res,
                 data: { deletedCount },

@@ -7,6 +7,8 @@ import routes from './routes';
 import database, { IDatabase  } from './database';
 import Logging from './libraries/logging.library';
 import { TenantConnectionService } from './services/tenantConnection.service';
+import { initializeEventSystem } from './events';
+import EventService from './events/EventService';
 
 class App {
     private app: Express.Application; // Express application instance
@@ -20,6 +22,7 @@ class App {
         this.tenantConnectionService = TenantConnectionService.getInstance();
         this.setupMiddleware(); // Setup middleware
         this.initDatabase(); // Initialize database connection
+        this.initializeEventSystem(); // Initialize event system
         this.setupGracefulShutdown(); // Setup graceful shutdown
     }
 
@@ -46,6 +49,26 @@ class App {
     }
 
     /**
+     * Initialize event system
+     */
+    private initializeEventSystem(): void {
+        try {
+            const { eventEmitter, eventManager } = initializeEventSystem();
+            
+            // Emit server initialization event
+            eventEmitter.emitEvent('system.server.initializing', {
+                port: this.port,
+                environment: process.env.NODE_ENV || 'development'
+            });
+
+            Logging.info('Event system initialized successfully');
+        } catch (error) {
+            Logging.error('Failed to initialize event system:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Start the server
      * @returns {Promise<void>} A promise that resolves when the server starts
      */
@@ -57,6 +80,10 @@ class App {
                     Logging.info(`Server running on port ${this.port}`); // Log the port number
                     Logging.info(`CORS enabled for origin: ${appConfig.allowedOrigins}`); // Log the CORS configuration
                     Logging.info(`Active tenant connections: ${this.tenantConnectionService.getActiveConnectionsCount()}`);
+                    
+                    // Emit server started event
+                    EventService.emitServerStarted(this.port);
+                    
                     resolve();
                 });
             });
@@ -72,6 +99,9 @@ class App {
     private setupGracefulShutdown(): void {
         const gracefulShutdown = async (signal: string) => {
             Logging.info(`Received ${signal}. Closing server gracefully...`);
+            
+            // Emit server shutdown event
+            EventService.emitServerShutdown(`Received ${signal}`);
             
             try {
                 // Close all tenant connections
