@@ -1,7 +1,7 @@
 import { Schema, model, Document } from "mongoose";
 import { IUser } from "./user.model";
 export interface IAddress extends Document {
-  userId: IUser;
+  userId: IUser["_id"];
   street: string;
   city: string;
   state: string;

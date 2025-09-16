@@ -1,4 +1,4 @@
-import { Request,Response, NextFunction } from "express";
+import e, { Request,Response, NextFunction } from "express";
 import { Controller } from "./controller";
 import { responseResult } from "../utils/response";
 import { errorResponse } from "../utils/errorResponse";
@@ -10,7 +10,9 @@ import UserService from "../services/user.service";
 import DataSanitizer from "../utils/sanitizeData";
 import { IUser } from "../models/user.model";
 import { hashPassword } from "../utils/passwords";
-import { th } from "zod/locales";
+import EventService from "../events/EventService";
+import addressRepository from "../repositories/address.repository";
+import { IAddress } from "@/models/address.model";
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
@@ -28,6 +30,9 @@ class TenantUserController extends Controller{
     private initializeRoutes() {
         this.router.get('/:tenantId/users', this.asyncHandler(this.getUsers.bind(this)));
         this.router.post('/:tenantId/users', this.asyncHandler(this.create.bind(this)));
+        this.router.get('/:tenantId/users/:userId', this.asyncHandler(this.getUser.bind(this)));
+        this.router.patch('/:tenantId/users/:userId', this.asyncHandler(this.update.bind(this)));
+        this.router.delete('/:tenantId/users/:userId', this.asyncHandler(this.delete.bind(this)));
     }
 
     private getUsers = async (req: Request, res: Response, next: NextFunction) => {
@@ -121,7 +126,7 @@ class TenantUserController extends Controller{
                 sort
             });
 
-          
+            
             
             if (!result) {
 
@@ -179,6 +184,7 @@ class TenantUserController extends Controller{
 
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
+                   
                 return errorResponse.sendError({
                     res,
                     message: "Tenant not found",
@@ -215,6 +221,7 @@ class TenantUserController extends Controller{
                     statusCode: 500
                 });
             }
+
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
               return responseResult.sendResponse({  
@@ -234,6 +241,238 @@ class TenantUserController extends Controller{
         }
     }
 
+
+    private getUser = async (req: Request, res: Response, next: NextFunction) => {
+    const tenantId = req.params.tenantId;
+    const userId = req.params.userId;
+    
+    if (!tenantId || !userId) {
+        return errorResponse.sendError({
+            res,
+            message: "Tenant ID and User ID are required",
+            statusCode: 400
+        });
+    }
+
+    try {
+        const tenant = await this.tenantService.findById(tenantId);
+        if (!tenant) {
+            return errorResponse.sendError({
+                res,
+                message: "Tenant not found",
+                statusCode: 404
+            });
+        }
+
+        // Create a connection to the tenant's database
+        const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+        
+        // Use the corrected findById method with proper populate options
+        const user = await this.userService.findById(connection.connection, userId);
+         const userAddress = new addressRepository(connection.connection);
+        const address = await userAddress.findByUserId(userId);
+        if (!user) {
+            return errorResponse.sendError({
+                res,
+                message: "User not found",
+                statusCode: 404
+            });
+        }
+
+        // Sanitize the user data to remove sensitive fields
+        const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
+        
+        return responseResult.sendResponse({
+            res,
+            data: {...sanitizedUser, address: address ? {
+                street: address.street,
+                city: address.city,
+                state: address.state,
+                zip: address.zip
+            } : null},
+            message: "User retrieved successfully",
+            statusCode: 200
+        });
+    } catch (error) {
+        Logging.info("Error fetching user:", error);
+        return errorResponse.sendError({
+            res,
+            message: "Failed to fetch user",
+            statusCode: 500,
+            details: error
+        });
+    }   
+    }
+
+    private update = async (req: Request, res: Response, next: NextFunction) => {
+        // Implementation for updating a user
+        const tenantId = req.params.tenantId;
+        const userId = req.params.userId;
+        const updateData = req.body;
+
+        if (!tenantId || !userId) {
+            return errorResponse.sendError({
+                res,
+                message: "Tenant ID and User ID are required",
+                statusCode: 400
+            });
+        }
+
+        try {
+            const tenant = await this.tenantService.findById(tenantId);
+            if (!tenant) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Tenant not found",
+                    statusCode: 404
+                });
+            }
+
+            // Create a connection to the tenant's database
+            const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            // Check for email uniqueness (exclude current user)
+            if (updateData.email) {
+                const existingUser = await this.userService.findByEmail(connection.connection, updateData.email);
+                
+                if (existingUser && String(existingUser._id) !== userId) {
+                  
+                    return errorResponse.sendError({
+                        res,
+                        message: "Validation failed",
+                        statusCode: 409,
+                        details: ["email: Email is already in use"],
+                    });
+                }
+            }
+            // Check for mobile uniqueness (exclude current user)
+            if (updateData.mobile) {
+                const existingUserByMobile = await this.userService.findByMobile(connection.connection, updateData.mobile);
+               
+                if (existingUserByMobile && String(existingUserByMobile._id) !== userId) {
+                   
+                    return errorResponse.sendError({
+                        res,
+                        message: "Validation failed",
+                        statusCode: 409,
+                        details: ["mobile: Mobile number is already in use"],
+                    });
+                }
+            }
+
+        
+          
+
+            const updatedUser = await this.userService.update(connection.connection, userId, {email: updateData.email, name: updateData.name, mobile: updateData.mobile});
+            if (!updatedUser) {
+                return errorResponse.sendError({
+                    res,
+                    message: "User not found or no changes made",
+                    statusCode: 404
+                });
+            }
+
+            const userAddress = new addressRepository(connection.connection);
+            const address = await userAddress.findByUserId(userId);
+            
+            if (address) {
+                            // Update existing address
+                            await userAddress.update(address?._id as string, {
+                                street: updateData.address,
+                                city: updateData.city,
+                                state : updateData.state,
+                                zip: updateData.postalCode,
+                            });
+                        } else {
+                            // Create new address
+                            const newAddress: Partial<IAddress> = {
+                                userId: updatedUser._id,
+                                street: updateData.address,
+                                city: updateData.city,
+                                state: updateData.state,
+                                zip: updateData.postalCode,
+                            };
+                            await userAddress.create(newAddress);
+                        }
+                
+            
+            // Sanitize the user data to remove sensitive fields
+            const sanitizedUser = DataSanitizer.sanitizeData<IUser>(updatedUser, ['password']);
+            const updatedAddress = await userAddress.findByUserId(userId as string);
+            return responseResult.sendResponse({
+                res,
+                data: {...sanitizedUser, address: updatedAddress ? {
+                    street: updatedAddress.street,
+                    city: updatedAddress.city,
+                    state: updatedAddress.state,
+                    zip: updatedAddress.zip
+                } : null},
+                message: "User updated successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            Logging.error("Error updating user:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Failed to update user",
+                statusCode: 500,
+                details: error
+            });
+        }
+
+           
+    }
+
+    private delete = async (req: Request, res: Response, next: NextFunction) => {
+        // Implementation for deleting a user
+        const tenantId = req.params.tenantId;
+        const userId = req.params.userId;
+
+        if (!tenantId || !userId) {
+            return errorResponse.sendError({
+                res,
+                message: "Tenant ID and User ID are required",
+                statusCode: 400
+            });
+        }
+
+        try {
+            const tenant = await this.tenantService.findById(tenantId);
+            if (!tenant) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Tenant not found",
+                    statusCode: 404
+                });
+            }
+
+            // Create a connection to the tenant's database
+            const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            const userAddress = new addressRepository(connection.connection);
+            await userAddress.deleteByUserId(userId);
+            const deletedUser = await this.userService.delete(connection.connection, userId);
+            if (!deletedUser) {
+                return errorResponse.sendError({
+                    res,
+                    message: "User not found",
+                    statusCode: 404
+                });
+            }
+
+            return responseResult.sendResponse({
+                res,
+                message: "User deleted successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            Logging.error("Error deleting user:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Failed to delete user",
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
 
 
 }

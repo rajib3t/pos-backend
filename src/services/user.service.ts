@@ -6,7 +6,7 @@ import  AddressRepository  from '../repositories/address.repository';
 import { Connection } from 'mongoose';
 import { TenantModelFactory } from '../utils/tenantModelFactory';
 import Logging from '../libraries/logging.library';
-import { PaginatedResult, PaginationOptions } from '@/repositories/repository';
+import { PaginatedResult, PaginationOptions, QueryOptions } from '@/repositories/repository';
 import database, { IDatabase } from "../database";
 class UserService {
    
@@ -72,8 +72,8 @@ class UserService {
         if (connectionOrEmail instanceof Connection) {
             // Tenant-aware version
             try {
-                const UserModel = TenantModelFactory.getUserModel(connectionOrEmail);
-                return await UserModel.findOne({ email: email! });
+                const tenantUserRepository = new UserRepository(connectionOrEmail);
+                return await tenantUserRepository.findOne({ email: email! });
             } catch (error) {
                 Logging.error(`Failed to find user by email: ${error}`);
                 throw error;
@@ -90,8 +90,8 @@ class UserService {
         if (connectionOrMobile instanceof Connection) {
             // Tenant-aware version
             try {
-                const UserModel = TenantModelFactory.getUserModel(connectionOrMobile);
-                return await UserModel.findOne({ mobile: mobile! });
+                const tenantUserRepository = new UserRepository(connectionOrMobile);
+                return await tenantUserRepository.findOne({ mobile: mobile! });
             } catch (error) {
                 Logging.error(`Failed to find user by mobile: ${error}`);
                 throw error;
@@ -104,23 +104,23 @@ class UserService {
 
                
 
-    public async findById(id: string): Promise<IUser | null>;
-    public async findById(tenantConnection: Connection, id: string): Promise<IUser | null>;
-    public async findById(connectionOrId: Connection | string, id?: string): Promise<IUser | null> {
-        if (connectionOrId instanceof Connection) {
-            // Tenant-aware version
-            try {
-                const UserModel = TenantModelFactory.getUserModel(connectionOrId);
-                return await UserModel.findById(id!);
-            } catch (error) {
-                Logging.error(`Failed to find user by ID: ${error}`);
-                throw error;
-            }
-        } else {
-            // Original version
-            return this.userRepository.findById(connectionOrId);
+   public async findById(id: string, options?: QueryOptions): Promise<IUser | null>;
+public async findById(connection: Connection, id: string, options?: QueryOptions): Promise<IUser | null>;
+public async findById(connectionOrId: string | Connection, idOrOptions?: string | QueryOptions, options?: QueryOptions): Promise<IUser | null> {
+    if (connectionOrId instanceof Connection) {
+        // Tenant-aware version
+        try {
+            const tenantUserRepository = new UserRepository(connectionOrId);
+            return await tenantUserRepository.findById(idOrOptions as string, options);
+        } catch (error) {
+            Logging.error(`Failed to find user by ID: ${error}`);
+            throw error;
         }
+    } else {
+        // Original version
+        return this.userRepository.findById(connectionOrId, idOrOptions as QueryOptions | undefined);
     }
+}
 
     
 
@@ -130,23 +130,9 @@ class UserService {
         if (connectionOrId instanceof Connection) {
             // Tenant-aware version
             try {
-                const UserModel = TenantModelFactory.getUserModel(connectionOrId);
-                const id = idOrData as string;
-                const data = userData!;
-
-                // If email is being updated, check for conflicts
-                if (data.email) {
-                    const existingUser = await UserModel.findOne({ email: data.email });
-                    if (existingUser && existingUser.id !== id) {
-                        throw new Error('User with this email already exists');
-                    }
-                }
-
-                const user = await UserModel.findByIdAndUpdate(id, data, { new: true });
-                if (user) {
-                    Logging.info(`User updated: ${user.email}`);
-                }
-                return user;
+                 const tenantUserRepository = new UserRepository(connectionOrId);
+                return await tenantUserRepository.update(idOrData as string, userData!);
+               
             } catch (error) {
                 Logging.error(`Failed to update user: ${error}`);
                 throw error;
@@ -306,12 +292,12 @@ class UserService {
 
                 return {
                     ...user,
-                    address: address ? {
-                        street: address.street,
-                        city: address.city,
-                        state: address.state,
-                        zip: address.zip
-                    } : undefined
+                    // address: address ? {
+                    //     street: address.street,
+                    //     city: address.city,
+                    //     state: address.state,
+                    //     zip: address.zip
+                    // } : undefined
                 } as IProfileData;
             } catch (error) {
                 Logging.error(`Failed to get user profile: ${error}`);
