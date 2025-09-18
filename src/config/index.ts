@@ -9,6 +9,7 @@ export const appConfig = {
     port: parseInt(process.env.PORT as string) || 3000,
     baseUrl: process.env.BASE_URL || 'http://localhost:3000',
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",") || [],
+
 };
 
 
@@ -28,3 +29,13 @@ export const jwtConfig = {
     refreshTokenExpiresIn: process.env.REFRESH_TTL || '7d',
     algorithm: process.env.JWT_ALGORITHM || 'HS256',
 };
+
+
+export const cookieConfig = {
+    baseDomain: process.env.BASE_DOMAIN || 'mypos.local',
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax' as const,
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+};
+

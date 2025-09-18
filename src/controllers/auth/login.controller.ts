@@ -10,6 +10,7 @@ import {errorResponse} from "../../utils/errorResponse"
 import ValidateMiddleware from '../../middlewares/validate'
 import { loginSchema } from "../../validators/auth.validator";
 import EventService from "../../events/EventService";
+import { cookieConfig } from "../../config";
 class LoginController extends Controller {
     private userService: UserService;
     private tokenService: TokenService;
@@ -96,9 +97,14 @@ class LoginController extends Controller {
 
             const options = {
                 httpOnly: true,
-                secure: true
+                secure: true,
+                domain: req.isLandlord ? `${cookieConfig.baseDomain}` : `${req.headers['x-tenant-subdomain']}.${cookieConfig.baseDomain}`,
+                sameSite: 'none' as const,
+                partitioned: true // <-- new attribute
             }
 
+
+            Logging.info('Options for cookies: ', options);
             // Enhanced token payload with context information
             const tokenPayload = {
                 userId: user._id,
@@ -127,8 +133,19 @@ class LoginController extends Controller {
             };
             const loginData = { accessToken, user: userResponse, refreshToken };
             
-            res.cookie("refreshToken", refreshToken, options);
-            res.cookie("accessToken", accessToken, options);
+            res.cookie("refreshToken", refreshToken, {
+                httpOnly: true,
+                secure: true,
+                sameSite: "none",
+                partitioned: true
+            });
+
+            res.cookie("accessToken", accessToken, {
+                httpOnly: true,
+                secure: true,
+                sameSite: "none",
+                partitioned: true
+            });
 
             // Emit successful login event
             EventService.emitUserLogin({
@@ -167,7 +184,7 @@ class LoginController extends Controller {
 
     private logout = async (req: Request, res: Response) => {
         
-        const incomingRefreshToken = req.cookies.refreshToken.token || req.body.refreshToken;
+        const incomingRefreshToken = req.body.refreshToken || req.cookies.refreshToken.token;
         if (!incomingRefreshToken) {
             return errorResponse.sendError({ res, statusCode: 400, message: "Refresh token is required" });
         }
@@ -196,7 +213,7 @@ class LoginController extends Controller {
 
 
     private refreshToken = async (req: Request, res: Response) => {
-        const incomingRefreshToken = req.cookies.refreshToken.token || req.body.refreshToken;
+        const incomingRefreshToken =  req.body.refreshToken ||  req.cookies.refreshToken.token;
         if (!incomingRefreshToken) {
             return errorResponse.sendError({ res, statusCode: 400, message: "Refresh token is required" });
         }

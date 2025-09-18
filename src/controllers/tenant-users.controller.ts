@@ -33,11 +33,12 @@ class TenantUserController extends Controller{
         this.router.get('/:tenantId/users/:userId', this.asyncHandler(this.getUser.bind(this)));
         this.router.patch('/:tenantId/users/:userId', this.asyncHandler(this.update.bind(this)));
         this.router.delete('/:tenantId/users/:userId', this.asyncHandler(this.delete.bind(this)));
+        this.router.patch('/:tenantId/users/:userId/reset-password', this.asyncHandler(this.passwordReset.bind(this)));
     }
 
     private getUsers = async (req: Request, res: Response, next: NextFunction) => {
         const tenantId = req.params.tenantId;
-        const { page, limit, name, email, createdAtFrom, createdAtTo, sortBy, sortOrder, sortField, sortDirection } = req.query;
+        const { page, limit, name, email, mobile, role, status, createdAtFrom, createdAtTo, sortBy, sortOrder, sortField, sortDirection } = req.query;
         if (!tenantId) {
            return errorResponse.sendError({
                 res,
@@ -67,6 +68,18 @@ class TenantUserController extends Controller{
 
             if (email) {
                 filter.email = { $regex: email, $options: 'i' }; // Case-insensitive search
+            }
+
+            if (mobile) {
+                filter.mobile = { $regex: mobile, $options: 'i' }; // Case-insensitive search
+            }
+
+            if (role) {
+                filter.role = role;
+            }
+
+            if (status !== undefined) {
+                filter.status = status === 'true'; // Convert to boolean
             }
             // Date range filtering with improved timezone handling
             if (createdAtFrom || createdAtTo) {
@@ -474,6 +487,59 @@ class TenantUserController extends Controller{
         }
     }
 
+    private passwordReset = async (req: Request, res: Response, next: NextFunction) => {
+        const tenantId = req.params.tenantId;
+        const userId = req.params.userId;
+        const { newPassword } = req.body;
+
+        if (!tenantId || !userId || !newPassword) {
+            return errorResponse.sendError({
+                res,
+                message: "Tenant ID, User ID, and new password are required",
+                statusCode: 400
+            });
+        }
+
+        try {
+            const tenant = await this.tenantService.findById(tenantId);
+            if (!tenant) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Tenant not found",
+                    statusCode: 404
+                });
+            }
+
+            // Create a connection to the tenant's database
+            const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            const hashedPassword = await hashPassword(newPassword);
+            const updatedUser = await this.userService.update(connection.connection, userId, { password: hashedPassword });
+            if (!updatedUser) {
+                return errorResponse.sendError({
+                    res,
+                    message: "User not found or no changes made",
+                    statusCode: 404
+                });
+            }
+
+            // Sanitize the user data to remove sensitive fields
+            const sanitizedUser = DataSanitizer.sanitizeData<IUser>(updatedUser, ['password']);
+            return responseResult.sendResponse({
+                res,
+                data: sanitizedUser,
+                message: "Password updated successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            Logging.error("Error updating password:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Failed to update password",
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
 
 }
 
