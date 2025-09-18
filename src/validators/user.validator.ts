@@ -84,4 +84,4 @@ const validateMobileUniqueness = async (
     }
 }
 
-export { profileUpdateSchema, validateEmailUniqueness};
+export { profileUpdateSchema, validateEmailUniqueness, validateMobileUniqueness};
