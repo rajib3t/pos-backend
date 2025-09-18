@@ -17,6 +17,7 @@ import {
 } from './types/EventPayloads';
 import Logging from '../libraries/logging.library';
 import MailService from '../services/mail.service';
+import { notificationConfig } from '../config';
 
 export class EventManager {
     private static instance: EventManager;
@@ -250,7 +251,7 @@ export class EventManager {
                 
                 // Send notification to admin
                 this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
-                    to: 'admin@platform.com', // Replace with actual admin email
+                    to: notificationConfig.adminEmail,
                     subject: 'New Tenant Created',
                     template: 'tenant_created',
                     templateData: {

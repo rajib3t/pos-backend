@@ -61,4 +61,11 @@ export const redisConfig = {
     defaultTTLSeconds: Number(process.env.CACHE_TTL || 300), // 5 minutes default
 };
 
+// Notification / administrative email recipients
+export const notificationConfig = {
+    adminEmail: process.env.ADMIN_EMAIL || 'admin@platform.com',
+    securityEmail: process.env.SECURITY_EMAIL || 'security@platform.com',
+    businessEmail: process.env.BUSINESS_EMAIL || 'business@platform.com'
+};
+
 

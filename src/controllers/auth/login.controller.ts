@@ -104,7 +104,7 @@ class LoginController extends Controller {
             }
 
 
-            Logging.info('Options for cookies: ', options);
+            
             // Enhanced token payload with context information
             const tokenPayload = {
                 userId: user._id,

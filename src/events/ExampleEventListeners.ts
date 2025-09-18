@@ -12,6 +12,7 @@ import {
     EmailNotificationPayload
 } from './types/EventPayloads';
 import Logging from '../libraries/logging.library';
+import { notificationConfig } from '../config';
 
 export class ExampleEventListeners {
     private eventEmitter: typeof AppEventEmitter;
@@ -149,7 +150,7 @@ export class ExampleEventListeners {
                 if (severity === 'high' || severity === 'critical') {
                     // Send immediate alert to security team
                     this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
-                        to: 'security@platform.com',
+                        to: notificationConfig.securityEmail,
                         subject: `SECURITY ALERT: ${type.toUpperCase()}`,
                         body: description,
                         priority: 'high'
@@ -195,7 +196,7 @@ export class ExampleEventListeners {
                 // Track tenant creation in analytics
                 // Send notification to business team about growth
                 this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
-                    to: 'business@platform.com',
+                    to: notificationConfig.businessEmail,
                     subject: 'New Tenant Alert',
                     template: 'new_tenant_business',
                     templateData: {
@@ -237,7 +238,7 @@ export class ExampleEventListeners {
                 // Alert administrators about delivery issues
                 if (event.payload.error?.includes('bounce') || event.payload.error?.includes('invalid')) {
                     this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
-                        to: 'admin@platform.com',
+                        to: notificationConfig.adminEmail,
                         subject: 'Email Delivery Issue',
                         body: `Failed to deliver email to ${event.payload.recipient}: ${event.payload.error}`,
                         priority: 'normal'

@@ -179,6 +179,22 @@ export class EventService {
         return this.eventEmitter.emitEvent(eventName, payload, context);
     }
 
+    // Emit multiple events efficiently (synchronously in a tight loop)
+    public batchEmit(events: Array<{ name: string; payload: any; context?: Partial<EventContext> }>): number {
+        let count = 0;
+        for (const e of events) {
+            if (this.eventEmitter.emitEvent(e.name, e.payload, e.context)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // Conditionally emit an event
+    public emitIf(condition: boolean, eventName: string, payload: any, context?: Partial<EventContext>): boolean {
+        return condition ? this.eventEmitter.emitEvent(eventName, payload, context) : false;
+    }
+
     // Helper to create event context from request
     public createContextFromRequest(req: any): Partial<EventContext> {
         return {
