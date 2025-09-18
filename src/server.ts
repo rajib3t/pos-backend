@@ -9,17 +9,20 @@ import Logging from './libraries/logging.library';
 import { TenantConnectionService } from './services/tenantConnection.service';
 import { initializeEventSystem } from './events';
 import EventService from './events/EventService';
+import RedisService from './services/redis.service';
 
 class App {
     private app: Express.Application; // Express application instance
     private port: number;
     private database!: IDatabase;
     private tenantConnectionService: TenantConnectionService;
+    private redisService: RedisService;
 
     constructor() {
         this.app = Express(); // Initialize Express application
         this.port = appConfig.port; // Use port from appConfig
         this.tenantConnectionService = TenantConnectionService.getInstance();
+        this.redisService = RedisService.getInstance();
         this.setupMiddleware(); // Setup middleware
         this.initDatabase(); // Initialize database connection
         this.initializeEventSystem(); // Initialize event system
@@ -74,6 +77,8 @@ class App {
      */
     public async start():  Promise<void>  {
         try {
+            // Initialize cache before starting the server
+            await this.initCache();
             //await this.initDatabase(); // Initialize the database connection
             return new Promise((resolve) => {
                 this.app.listen(this.port, () => {
@@ -94,6 +99,19 @@ class App {
     }
 
     /**
+     * Initialize Redis cache connection
+     */
+    private async initCache(): Promise<void> {
+        try {
+            await this.redisService.connect();
+        } catch (error) {
+            Logging.error('Failed to initialize Redis cache:', error);
+            // Depending on requirements, either throw to prevent server start or continue without cache
+            // throw error;
+        }
+    }
+
+    /**
      * Setup graceful shutdown for tenant connections
      */
     private setupGracefulShutdown(): void {
@@ -110,6 +128,9 @@ class App {
                 
                 // Close main database connection
                 // Note: mongoose.connection.close() is handled automatically
+                
+                // Close Redis connection
+                await this.redisService.disconnect();
                 
                 process.exit(0);
             } catch (error) {

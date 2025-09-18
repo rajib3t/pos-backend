@@ -39,3 +39,26 @@ export const cookieConfig = {
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
 };
 
+// Mail configuration for SMTP
+export const mailConfig = {
+    host: process.env.SMTP_HOST || 'localhost',
+    port: Number(process.env.SMTP_PORT || 1025),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.MAIL_FROM || 'no-reply@mypos.local'
+};
+
+// Redis configuration for caching
+export const redisConfig = {
+    // Prefer single URL if provided (e.g. redis://:password@host:6379/0)
+    url: process.env.REDIS_URL || '',
+    host: process.env.REDIS_HOST || '127.0.0.1',
+    port: Number(process.env.REDIS_PORT || 6379),
+    password: process.env.REDIS_PASSWORD || undefined,
+    db: Number(process.env.REDIS_DB || 0),
+    keyPrefix: process.env.REDIS_PREFIX || 'pos:',
+    defaultTTLSeconds: Number(process.env.CACHE_TTL || 300), // 5 minutes default
+};
+
+

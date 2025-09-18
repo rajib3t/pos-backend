@@ -7,12 +7,17 @@ export const EVENTS = {
     // User Events
     USER: {
         REGISTERED: 'user.registered',
+        CREATED: 'user.created',
         LOGIN: 'user.login',
         LOGOUT: 'user.logout',
         PROFILE_UPDATED: 'user.profile.updated',
+        UPDATED: 'user.updated',
         PASSWORD_CHANGED: 'user.password.changed',
+        PASSWORD_RESET: 'user.password.reset',
         DEACTIVATED: 'user.deactivated',
-        EMAIL_VERIFIED: 'user.email.verified'
+        DELETED: 'user.deleted',
+        EMAIL_VERIFIED: 'user.email.verified',
+        VIEWED: 'user.viewed'
     },
 
     // Tenant Events
@@ -61,8 +66,30 @@ export const EVENTS = {
         ACTION_PERFORMED: 'audit.action.performed',
         DATA_ACCESSED: 'audit.data.accessed',
         SECURITY_EVENT: 'audit.security.event'
+    },
+
+    // Address Events
+    ADDRESS: {
+        CREATED: 'address.created',
+        UPDATED: 'address.updated',
+        DELETED: 'address.deleted'
+    },
+
+    // Generic CRUD Events
+    CRUD: {
+        OPERATION: 'crud.operation'
     }
 } as const;
 
 // Type helper for event names
 export type EventNames = typeof EVENTS[keyof typeof EVENTS][keyof typeof EVENTS[keyof typeof EVENTS]];
+
+// Helper to get all user events
+export const USER_EVENTS = EVENTS.USER;
+export const TENANT_EVENTS = EVENTS.TENANT;
+export const AUTH_EVENTS = EVENTS.AUTH;
+export const SYSTEM_EVENTS = EVENTS.SYSTEM;
+export const NOTIFICATION_EVENTS = EVENTS.NOTIFICATION;
+export const AUDIT_EVENTS = EVENTS.AUDIT;
+export const ADDRESS_EVENTS = EVENTS.ADDRESS;
+export const CRUD_EVENTS = EVENTS.CRUD;

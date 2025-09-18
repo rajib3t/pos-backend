@@ -4,13 +4,20 @@ import {
     UserRegisteredPayload,
     UserLoginPayload,
     UserProfileUpdatedPayload,
+    UserCreatedPayload,
+    UserUpdatedPayload,
+    UserDeletedPayload,
+    UserPasswordResetPayload,
     TenantCreatedPayload,
     TenantUpdatedPayload,
     AuthTokenCreatedPayload,
     AuthLoginAttemptPayload,
     EmailNotificationPayload,
     AuditActionPayload,
-    SecurityEventPayload
+    SecurityEventPayload,
+    AddressCreatedPayload,
+    AddressUpdatedPayload,
+    CrudOperationPayload
 } from './types/EventPayloads';
 
 /**
@@ -51,6 +58,27 @@ export class EventService {
 
     public emitUserDeactivated(userId: string, reason?: string, context?: Partial<EventContext>): boolean {
         return this.eventEmitter.emitEvent(EVENTS.USER.DEACTIVATED, { userId, reason }, context);
+    }
+
+    // Enhanced User Events
+    public emitUserCreated(payload: UserCreatedPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.USER.CREATED, payload, context);
+    }
+
+    public emitUserUpdated(payload: UserUpdatedPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.USER.UPDATED, payload, context);
+    }
+
+    public emitUserDeleted(payload: UserDeletedPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.USER.DELETED, payload, context);
+    }
+
+    public emitUserPasswordReset(payload: UserPasswordResetPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.USER.PASSWORD_RESET, payload, context);
+    }
+
+    public emitUserViewed(userId: string, viewedBy: string, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.USER.VIEWED, { userId, viewedBy }, context);
     }
 
     // Tenant Events
@@ -128,6 +156,24 @@ export class EventService {
         return this.eventEmitter.emitEvent(EVENTS.AUDIT.SECURITY_EVENT, payload, context);
     }
 
+    // Address Events
+    public emitAddressCreated(payload: AddressCreatedPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.ADDRESS.CREATED, payload, context);
+    }
+
+    public emitAddressUpdated(payload: AddressUpdatedPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.ADDRESS.UPDATED, payload, context);
+    }
+
+    public emitAddressDeleted(addressId: string, userId: string, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.ADDRESS.DELETED, { addressId, userId }, context);
+    }
+
+    // Generic CRUD Event
+    public emitCrudOperation(payload: CrudOperationPayload, context?: Partial<EventContext>): boolean {
+        return this.eventEmitter.emitEvent(EVENTS.CRUD.OPERATION, payload, context);
+    }
+
     // Convenience method to emit custom events
     public emitCustomEvent(eventName: string, payload: any, context?: Partial<EventContext>): boolean {
         return this.eventEmitter.emitEvent(eventName, payload, context);
@@ -140,6 +186,57 @@ export class EventService {
             tenantId: req.tenant?.id || req.tenant?._id,
             subdomain: req.subdomain
         };
+    }
+
+    // Helper to emit audit trail for any operation
+    public emitAuditTrail(
+        action: string,
+        resource: string,
+        resourceId: string,
+        userId: string,
+        metadata?: any,
+        context?: Partial<EventContext>
+    ): boolean {
+        return this.emitAuditAction({
+            action,
+            resource,
+            resourceId,
+            userId,
+            tenantId: context?.tenantId,
+            metadata
+        }, context);
+    }
+
+    // Helper to emit both CRUD and audit events
+    public emitCrudWithAudit(
+        operation: 'create' | 'read' | 'update' | 'delete',
+        resource: string,
+        resourceId: string,
+        userId: string,
+        data?: any,
+        previousData?: any,
+        context?: Partial<EventContext>
+    ): boolean {
+        // Emit CRUD event
+        this.emitCrudOperation({
+            operation,
+            resource,
+            resourceId,
+            userId,
+            tenantId: context?.tenantId,
+            data,
+            previousData
+        }, context);
+
+        // Emit audit event
+        return this.emitAuditTrail(
+            `${resource}_${operation}`,
+            resource,
+            resourceId,
+            userId,
+            { operation, data, previousData },
+            context
+        );
     }
 }
 

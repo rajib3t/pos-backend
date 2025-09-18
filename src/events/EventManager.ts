@@ -3,12 +3,20 @@ import { EVENTS } from './types/EventNames';
 import {
     UserRegisteredPayload,
     UserLoginPayload,
+    UserCreatedPayload,
+    UserUpdatedPayload,
+    UserDeletedPayload,
+    UserPasswordResetPayload,
     TenantCreatedPayload,
     AuthTokenCreatedPayload,
     EmailNotificationPayload,
-    AuditActionPayload
+    AuditActionPayload,
+    AddressCreatedPayload,
+    AddressUpdatedPayload,
+    CrudOperationPayload
 } from './types/EventPayloads';
 import Logging from '../libraries/logging.library';
+import MailService from '../services/mail.service';
 
 export class EventManager {
     private static instance: EventManager;
@@ -40,6 +48,8 @@ export class EventManager {
         this.setupSystemEventListeners();
         this.setupNotificationEventListeners();
         this.setupAuditEventListeners();
+        this.setupAddressEventListeners();
+        this.setupCrudEventListeners();
 
         this.isInitialized = true;
         Logging.info('Event Manager initialized with all listeners');
@@ -101,6 +111,127 @@ export class EventManager {
                         userAgent: event.payload.userAgent
                     }
                 } as AuditActionPayload, event.context);
+            }
+        );
+
+        // Enhanced User Events
+        this.eventEmitter.registerListener<UserCreatedPayload>(
+            EVENTS.USER.CREATED,
+            async (event) => {
+                Logging.info(`User created: ${event.payload.email}`, {
+                    userId: event.payload.userId,
+                    tenantId: event.payload.tenantId,
+                    createdBy: event.payload.createdBy
+                });
+
+                // Send welcome email
+                this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
+                    to: event.payload.email,
+                    subject: 'Welcome! Your account has been created',
+                    template: 'user_created',
+                    templateData: {
+                        name: event.payload.name,
+                        email: event.payload.email
+                    }
+                }, event.context);
+
+                // Create audit log
+                this.eventEmitter.emitEvent(EVENTS.AUDIT.ACTION_PERFORMED, {
+                    action: 'user_created',
+                    resource: 'user',
+                    resourceId: event.payload.userId,
+                    userId: event.payload.createdBy,
+                    tenantId: event.payload.tenantId,
+                    metadata: {
+                        email: event.payload.email,
+                        name: event.payload.name,
+                        role: event.payload.role
+                    }
+                } as AuditActionPayload, event.context);
+            }
+        );
+
+        this.eventEmitter.registerListener<UserUpdatedPayload>(
+            EVENTS.USER.UPDATED,
+            async (event) => {
+                Logging.info(`User updated: ${event.payload.userId}`, {
+                    updatedFields: event.payload.updatedFields,
+                    updatedBy: event.payload.updatedBy
+                });
+
+                // Create audit log
+                this.eventEmitter.emitEvent(EVENTS.AUDIT.ACTION_PERFORMED, {
+                    action: 'user_updated',
+                    resource: 'user',
+                    resourceId: event.payload.userId,
+                    userId: event.payload.updatedBy,
+                    tenantId: event.payload.tenantId,
+                    metadata: {
+                        updatedFields: event.payload.updatedFields,
+                        previousData: event.payload.previousData,
+                        newData: event.payload.newData
+                    }
+                } as AuditActionPayload, event.context);
+            }
+        );
+
+        this.eventEmitter.registerListener<UserDeletedPayload>(
+            EVENTS.USER.DELETED,
+            async (event) => {
+                Logging.info(`User deleted: ${event.payload.email}`, {
+                    userId: event.payload.userId,
+                    deletedBy: event.payload.deletedBy,
+                    softDelete: event.payload.softDelete
+                });
+
+                // Create audit log
+                this.eventEmitter.emitEvent(EVENTS.AUDIT.ACTION_PERFORMED, {
+                    action: 'user_deleted',
+                    resource: 'user',
+                    resourceId: event.payload.userId,
+                    userId: event.payload.deletedBy,
+                    tenantId: event.payload.tenantId,
+                    metadata: {
+                        email: event.payload.email,
+                        name: event.payload.name,
+                        softDelete: event.payload.softDelete
+                    }
+                } as AuditActionPayload, event.context);
+            }
+        );
+
+        this.eventEmitter.registerListener<UserPasswordResetPayload>(
+            EVENTS.USER.PASSWORD_RESET,
+            async (event) => {
+                Logging.info(`Password reset for user: ${event.payload.email}`, {
+                    userId: event.payload.userId,
+                    resetBy: event.payload.resetBy,
+                    resetMethod: event.payload.resetMethod
+                });
+
+                // Send notification email
+                this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
+                    to: event.payload.email,
+                    subject: 'Password Reset Notification',
+                    template: 'password_reset',
+                    templateData: {
+                        resetMethod: event.payload.resetMethod,
+                        resetBy: event.payload.resetBy
+                    }
+                }, event.context);
+
+                // Create security audit log
+                this.eventEmitter.emitEvent(EVENTS.AUDIT.SECURITY_EVENT, {
+                    type: 'password_reset' as any,
+                    severity: 'medium',
+                    description: `Password reset performed by ${event.payload.resetMethod}`,
+                    userId: event.payload.userId,
+                    tenantId: event.payload.tenantId,
+                    metadata: {
+                        resetBy: event.payload.resetBy,
+                        resetMethod: event.payload.resetMethod
+                    }
+                }, event.context);
             }
         );
     }
@@ -187,9 +318,16 @@ export class EventManager {
             EVENTS.NOTIFICATION.EMAIL_SEND,
             async (event) => {
                 try {
-                    // Simulate email sending - replace with actual email service
-                    await this.sendEmail(event.payload);
-                    
+                    // Send via MailService
+                    await MailService.send({
+                        to: event.payload.to,
+                        from: event.payload.from,
+                        subject: event.payload.subject,
+                        template: event.payload.template,
+                        templateData: event.payload.templateData,
+                        body: event.payload.body
+                    });
+
                     this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SENT, {
                         type: 'email',
                         recipient: Array.isArray(event.payload.to) 
@@ -234,21 +372,7 @@ export class EventManager {
         );
     }
 
-    /**
-     * Simulate email sending (replace with actual email service)
-     */
-    private async sendEmail(payload: EmailNotificationPayload): Promise<void> {
-        return new Promise((resolve) => {
-            // Simulate async email sending
-            setTimeout(() => {
-                Logging.info(`Email sent to: ${payload.to}`, {
-                    subject: payload.subject,
-                    template: payload.template
-                });
-                resolve();
-            }, 100);
-        });
-    }
+    // Email sending handled by MailService now
 
     /**
      * Get event statistics
@@ -258,6 +382,51 @@ export class EventManager {
             listenerCounts: this.eventEmitter.getEventStats(),
             isInitialized: this.isInitialized
         };
+    }
+
+    /**
+     * Address event listeners
+     */
+    private setupAddressEventListeners(): void {
+        this.eventEmitter.registerListener<AddressCreatedPayload>(
+            EVENTS.ADDRESS.CREATED,
+            async (event) => {
+                Logging.info(`Address created for user: ${event.payload.userId}`, {
+                    addressId: event.payload.addressId,
+                    city: event.payload.city,
+                    state: event.payload.state
+                });
+            }
+        );
+
+        this.eventEmitter.registerListener<AddressUpdatedPayload>(
+            EVENTS.ADDRESS.UPDATED,
+            async (event) => {
+                Logging.info(`Address updated for user: ${event.payload.userId}`, {
+                    addressId: event.payload.addressId
+                });
+            }
+        );
+    }
+
+    /**
+     * CRUD event listeners
+     */
+    private setupCrudEventListeners(): void {
+        this.eventEmitter.registerListener<CrudOperationPayload>(
+            EVENTS.CRUD.OPERATION,
+            async (event) => {
+                Logging.debug(`CRUD operation: ${event.payload.operation} on ${event.payload.resource}`, {
+                    resourceId: event.payload.resourceId,
+                    userId: event.payload.userId,
+                    tenantId: event.payload.tenantId
+                });
+
+                // Could implement metrics collection here
+                // Could implement caching invalidation here
+                // Could implement real-time notifications here
+            }
+        );
     }
 
     /**

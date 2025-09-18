@@ -13,6 +13,8 @@ import { hashPassword } from "../utils/passwords";
 import EventService from "../events/EventService";
 import addressRepository from "../repositories/address.repository";
 import { IAddress } from "@/models/address.model";
+import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
+import { EmitUserCreated, EmitUserUpdated, EmitUserDeleted, EmitUserViewed } from "../decorators/event.decorator";
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
@@ -28,12 +30,43 @@ class TenantUserController extends Controller{
     }
 
     private initializeRoutes() {
-        this.router.get('/:tenantId/users', this.asyncHandler(this.getUsers.bind(this)));
-        this.router.post('/:tenantId/users', this.asyncHandler(this.create.bind(this)));
-        this.router.get('/:tenantId/users/:userId', this.asyncHandler(this.getUser.bind(this)));
-        this.router.patch('/:tenantId/users/:userId', this.asyncHandler(this.update.bind(this)));
-        this.router.delete('/:tenantId/users/:userId', this.asyncHandler(this.delete.bind(this)));
-        this.router.patch('/:tenantId/users/:userId/reset-password', this.asyncHandler(this.passwordReset.bind(this)));
+        // Enhanced routes with event middleware
+        this.router.get('/:tenantId/users', 
+            EventEmissionMiddleware.forRead('user_list', {
+                extractResourceId: (req) => req.params.tenantId,
+                skipCrud: true // List operations don't need CRUD events
+            }),
+            this.asyncHandler(this.getUsers.bind(this))
+        );
+        
+        this.router.post('/:tenantId/users', 
+            EventEmissionMiddleware.forCreate('user'),
+            this.asyncHandler(this.create.bind(this))
+        );
+        
+        this.router.get('/:tenantId/users/:userId', 
+            EventEmissionMiddleware.forRead('user'),
+            this.asyncHandler(this.getUser.bind(this))
+        );
+        
+        this.router.patch('/:tenantId/users/:userId', 
+            EventEmissionMiddleware.forUpdate('user'),
+            this.asyncHandler(this.update.bind(this))
+        );
+        
+        this.router.delete('/:tenantId/users/:userId', 
+            EventEmissionMiddleware.forDelete('user'),
+            this.asyncHandler(this.delete.bind(this))
+        );
+        
+        this.router.patch('/:tenantId/users/:userId/reset-password', 
+            EventEmissionMiddleware.createEventMiddleware({
+                resource: 'user',
+                operation: 'update',
+                customEventName: 'user.password.reset'
+            }),
+            this.asyncHandler(this.passwordReset.bind(this))
+        );
     }
 
     private getUsers = async (req: Request, res: Response, next: NextFunction) => {
@@ -153,13 +186,28 @@ class TenantUserController extends Controller{
             // Sanitize the tenant data to remove sensitive fields
             const sanitizedTenants = DataSanitizer.sanitizeData<IUser[]>(result.items, ['password']);
 
+            // Emit audit event for user list access
+            EventService.emitAuditTrail(
+                'user_list_accessed',
+                'user_list',
+                tenantId,
+                'system', // or req.userId if available
+                {
+                    totalUsers: (result as any).total || (result as any).totalCount || result.items?.length || 0,
+                    page: Number(page) || 1,
+                    limit: Number(limit) || 10,
+                    filters: filter
+                },
+                EventService.createContextFromRequest(req)
+            );
+
            return responseResult.sendResponse({
                 res,
                 data: {
                     ...result,
                     items: sanitizedTenants
                 },
-                message: "Tenants retrieved successfully",
+                message: "Users retrieved successfully",
                 statusCode: 200
             });
             // Sanitize the tenant data to remove sensitive fields
@@ -235,6 +283,17 @@ class TenantUserController extends Controller{
                 });
             }
 
+            // Emit user created event with comprehensive data
+            EventService.emitUserCreated({
+                userId: user._id as string,
+                email: user.email,
+                name: user.name,
+                mobile: user.mobile,
+                role: user.role,
+                tenantId: tenantId as string,
+                createdBy: 'admin' // or req.userId if available
+            }, EventService.createContextFromRequest(req));
+
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
               return responseResult.sendResponse({  
@@ -291,6 +350,13 @@ class TenantUserController extends Controller{
                 statusCode: 404
             });
         }
+
+        // Emit user viewed event
+        EventService.emitUserViewed(
+            userId,
+            'admin', // or req.userId if available
+            EventService.createContextFromRequest(req)
+        );
 
         // Sanitize the user data to remove sensitive fields
         const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
@@ -375,6 +441,9 @@ class TenantUserController extends Controller{
         
           
 
+            // Get previous user data for event emission
+            const previousUser = await this.userService.findById(connection.connection, userId);
+            
             const updatedUser = await this.userService.update(connection.connection, userId, {email: updateData.email, name: updateData.name, mobile: updateData.mobile});
             if (!updatedUser) {
                 return errorResponse.sendError({
@@ -384,18 +453,59 @@ class TenantUserController extends Controller{
                 });
             }
 
+            // Emit user updated event
+            EventService.emitUserUpdated({
+                userId: userId,
+                previousData: {
+                    email: previousUser?.email,
+                    name: previousUser?.name,
+                    mobile: previousUser?.mobile
+                },
+                newData: {
+                    email: updateData.email,
+                    name: updateData.name,
+                    mobile: updateData.mobile
+                },
+                updatedFields: Object.keys(updateData).filter(key => 
+                    ['email', 'name', 'mobile'].includes(key) && updateData[key] !== undefined
+                ),
+                updatedBy: 'admin', // or req.userId if available
+                tenantId: tenantId
+            }, EventService.createContextFromRequest(req));
+
             const userAddress = new addressRepository(connection.connection);
             const address = await userAddress.findByUserId(userId);
             
-            if (address) {
-                            // Update existing address
-                            await userAddress.update(address?._id as string, {
+            if (address && (updateData.address || updateData.city || updateData.state || updateData.postalCode)) {
+                            // Update existing address and emit event
+                            const previousAddressData = {
+                                street: address.street,
+                                city: address.city,
+                                state: address.state,
+                                zip: address.zip
+                            };
+                            
+                            await userAddress.update(address._id as string, {
                                 street: updateData.address,
                                 city: updateData.city,
                                 state : updateData.state,
                                 zip: updateData.postalCode,
                             });
-                        } else {
+                            
+                            // Emit address updated event
+                            EventService.emitAddressUpdated({
+                                addressId: address._id as string,
+                                userId: updatedUser._id as string,
+                                previousData: previousAddressData,
+                                newData: {
+                                    street: updateData.address,
+                                    city: updateData.city,
+                                    state: updateData.state,
+                                    zip: updateData.postalCode
+                                },
+                                tenantId: tenantId
+                            }, EventService.createContextFromRequest(req));
+                        } else if (!address && (updateData.address || updateData.city || updateData.state || updateData.postalCode)) {
                             // Create new address
                             const newAddress: Partial<IAddress> = {
                                 userId: updatedUser._id,
@@ -404,7 +514,18 @@ class TenantUserController extends Controller{
                                 state: updateData.state,
                                 zip: updateData.postalCode,
                             };
-                            await userAddress.create(newAddress);
+                            const createdAddress = await userAddress.create(newAddress);
+                            
+                            // Emit address created event
+                            EventService.emitAddressCreated({
+                                addressId: createdAddress._id as string,
+                                userId: updatedUser._id as string,
+                                street: updateData.address,
+                                city: updateData.city,
+                                state: updateData.state,
+                                zip: updateData.postalCode,
+                                tenantId: tenantId
+                            }, EventService.createContextFromRequest(req));
                         }
                 
             
@@ -460,6 +581,17 @@ class TenantUserController extends Controller{
 
             // Create a connection to the tenant's database
             const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            
+            // Get user data before deletion for event emission
+            const userToDelete = await this.userService.findById(connection.connection, userId);
+            if (!userToDelete) {
+                return errorResponse.sendError({
+                    res,
+                    message: "User not found",
+                    statusCode: 404
+                });
+            }
+            
             const userAddress = new addressRepository(connection.connection);
             await userAddress.deleteByUserId(userId);
             const deletedUser = await this.userService.delete(connection.connection, userId);
@@ -470,6 +602,23 @@ class TenantUserController extends Controller{
                     statusCode: 404
                 });
             }
+
+            // Emit user deleted event
+            EventService.emitUserDeleted({
+                userId: userId,
+                email: userToDelete.email,
+                name: userToDelete.name,
+                deletedBy: 'admin', // or req.userId if available
+                tenantId: tenantId,
+                softDelete: false
+            }, EventService.createContextFromRequest(req));
+
+            // Emit address deleted event if address existed
+            EventService.emitAddressDeleted(
+                'address_for_user_' + userId,
+                userId,
+                EventService.createContextFromRequest(req)
+            );
 
             return responseResult.sendResponse({
                 res,
@@ -512,6 +661,17 @@ class TenantUserController extends Controller{
 
             // Create a connection to the tenant's database
             const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
+            
+            // Get user data for event emission
+            const userForReset = await this.userService.findById(connection.connection, userId);
+            if (!userForReset) {
+                return errorResponse.sendError({
+                    res,
+                    message: "User not found",
+                    statusCode: 404
+                });
+            }
+            
             const hashedPassword = await hashPassword(newPassword);
             const updatedUser = await this.userService.update(connection.connection, userId, { password: hashedPassword });
             if (!updatedUser) {
@@ -521,6 +681,15 @@ class TenantUserController extends Controller{
                     statusCode: 404
                 });
             }
+
+            // Emit password reset event
+            EventService.emitUserPasswordReset({
+                userId: userId,
+                email: userForReset.email,
+                resetBy: 'admin', // or req.userId if available
+                tenantId: tenantId,
+                resetMethod: 'admin'
+            }, EventService.createContextFromRequest(req));
 
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(updatedUser, ['password']);

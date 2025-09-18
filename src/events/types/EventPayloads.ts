@@ -23,6 +23,8 @@ export interface UserProfileUpdatedPayload extends EventPayload {
     previousData: any;
     newData: any;
     updatedFields: string[];
+    updatedBy?: string;
+    tenantId?: string;
 }
 
 // Tenant Event Payloads
@@ -121,5 +123,76 @@ export interface SecurityEventPayload extends EventPayload {
     userId?: string;
     tenantId?: string;
     ipAddress?: string;
+    metadata?: any;
+}
+
+// Enhanced User Event Payloads
+export interface UserCreatedPayload extends EventPayload {
+    userId: string;
+    email: string;
+    name: string;
+    mobile?: string;
+    role?: string;
+    tenantId?: string;
+    // Sub-account (tenant) info to enrich notifications
+    tenantName?: string;
+    subdomain?: string;
+    createdBy: string;
+}
+
+export interface UserUpdatedPayload extends EventPayload {
+    userId: string;
+    previousData: any;
+    newData: any;
+    updatedFields: string[];
+    updatedBy: string;
+    tenantId?: string;
+}
+
+export interface UserDeletedPayload extends EventPayload {
+    userId: string;
+    email: string;
+    name: string;
+    deletedBy: string;
+    tenantId?: string;
+    softDelete?: boolean;
+}
+
+export interface UserPasswordResetPayload extends EventPayload {
+    userId: string;
+    email: string;
+    resetBy: string;
+    tenantId?: string;
+    resetMethod: 'admin' | 'self' | 'forgot_password';
+}
+
+// Address Event Payloads
+export interface AddressCreatedPayload extends EventPayload {
+    addressId: string;
+    userId: string;
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    tenantId?: string;
+}
+
+export interface AddressUpdatedPayload extends EventPayload {
+    addressId: string;
+    userId: string;
+    previousData: any;
+    newData: any;
+    tenantId?: string;
+}
+
+// Generic CRUD Event Payloads
+export interface CrudOperationPayload extends EventPayload {
+    operation: 'create' | 'read' | 'update' | 'delete';
+    resource: string;
+    resourceId: string;
+    userId: string;
+    tenantId?: string;
+    data?: any;
+    previousData?: any;
     metadata?: any;
 }
