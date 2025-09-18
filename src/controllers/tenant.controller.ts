@@ -11,6 +11,9 @@ import ValidateMiddleware from "../middlewares/validate";
 import { tenantCreateSchema , getTenantsSchema, getTenantSchema, updateTenantSchema, deleteTenantSchema} from "../validators/tenant.validator";
 import DataSanitizer from "../utils/sanitizeData";
 import EventService from "../events/EventService";
+import CacheMiddleware from "../middlewares/cache.middleware";
+import CacheService from "../services/cache.service";
+import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
 
 class TenantController extends Controller{
     private tenantService: TenantService;
@@ -21,11 +24,128 @@ class TenantController extends Controller{
     }
 
     private initializeRoutes() {
-        this.router.post("/create", ValidateMiddleware.getInstance().validate(tenantCreateSchema), this.asyncHandler(this.create));
-        this.router.get("/", ValidateMiddleware.getInstance().validate(getTenantsSchema), this.asyncHandler(this.index));
-        this.router.get("/:id", ValidateMiddleware.getInstance().validate(getTenantSchema), this.asyncHandler(this.getTenant));
-        this.router.put("/:id", ValidateMiddleware.getInstance().validate(updateTenantSchema), this.asyncHandler(this.update));
-        this.router.delete("/:id", ValidateMiddleware.getInstance().validate(deleteTenantSchema), this.asyncHandler(this.delete));
+        // Create tenant with rate limiting and cache invalidation
+        this.router.post(
+            "/create", 
+            ValidateMiddleware.getInstance().validate(tenantCreateSchema),
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000, // 1 hour
+                maxRequests: 10,
+                keyGenerator: (req) => `tenant:create:${req.ip}`
+            }),
+            CacheMiddleware.invalidate(() => [
+                'tenants:list:*',
+                'tenants:stats:*',
+                'tenant:count'
+            ]),
+            EventEmissionMiddleware.forCreate('tenant'),
+            this.asyncHandler(this.create)
+        );
+
+        // List tenants with caching and rate limiting
+        this.router.get(
+            "/", 
+            ValidateMiddleware.getInstance().validate(getTenantsSchema),
+            CacheMiddleware.rateLimit({
+                windowMs: 15 * 60 * 1000, // 15 minutes
+                maxRequests: 100,
+                keyGenerator: (req) => `tenant:list:${req.ip}`
+            }),
+            CacheMiddleware.cache({
+                ttl: 300, // 5 minutes
+                prefix: 'tenants',
+                keyGenerator: (req) => {
+                    const queryStr = JSON.stringify(req.query || {});
+                    return `list:${Buffer.from(queryStr).toString('base64')}`;
+                }
+            }),
+            EventEmissionMiddleware.forRead('tenant_list', {
+                skipCrud: true
+            }),
+            this.asyncHandler(this.index)
+        );
+
+        // Get tenant detail with caching
+        this.router.get(
+            "/:id", 
+            ValidateMiddleware.getInstance().validate(getTenantSchema),
+            CacheMiddleware.cache({
+                ttl: 600, // 10 minutes
+                prefix: 'tenant',
+                keyGenerator: (req) => `detail:${req.params.id}`
+            }),
+            EventEmissionMiddleware.forRead('tenant'),
+            this.asyncHandler(this.getTenant)
+        );
+
+        // Update tenant with rate limiting and cache invalidation
+        this.router.put(
+            "/:id", 
+            ValidateMiddleware.getInstance().validate(updateTenantSchema),
+            CacheMiddleware.rateLimit({
+                windowMs: 15 * 60 * 1000, // 15 minutes
+                maxRequests: 20,
+                keyGenerator: (req) => `tenant:${req.params.id}:update:${req.ip}`
+            }),
+            CacheMiddleware.invalidate((req) => [
+                `tenant:detail:${req.params.id}`,
+                'tenants:list:*',
+                'tenants:stats:*'
+            ]),
+            EventEmissionMiddleware.forUpdate('tenant'),
+            this.asyncHandler(this.update)
+        );
+
+        // Delete tenant with rate limiting and cache invalidation
+        this.router.delete(
+            "/:id", 
+            ValidateMiddleware.getInstance().validate(deleteTenantSchema),
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000, // 1 hour
+                maxRequests: 5,
+                keyGenerator: (req) => `tenant:${req.params.id}:delete:${req.ip}`
+            }),
+            CacheMiddleware.invalidate((req) => [
+                `tenant:detail:${req.params.id}`,
+                'tenants:list:*',
+                'tenants:stats:*',
+                'tenant:count'
+            ]),
+            EventEmissionMiddleware.forDelete('tenant'),
+            this.asyncHandler(this.delete)
+        );
+
+        // Cache management endpoints
+        this.router.post(
+            "/cache/clear",
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000, // 1 hour
+                maxRequests: 10,
+                keyGenerator: (req) => `tenant:cache:clear:${req.ip}`
+            }),
+            this.asyncHandler(this.clearCache)
+        );
+
+        this.router.get(
+            "/cache/stats",
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 1000, // 1 minute
+                maxRequests: 30,
+                keyGenerator: (req) => `tenant:cache:stats:${req.ip}`
+            }),
+            this.asyncHandler(this.getCacheStats)
+        );
+
+        // Tenant statistics endpoint
+        this.router.get(
+            "/stats",
+            CacheMiddleware.cache({
+                ttl: 300, // 5 minutes
+                prefix: 'tenants',
+                keyGenerator: () => 'stats:summary'
+            }),
+            this.asyncHandler(this.getTenantStats)
+        );
     }
 
    
@@ -67,7 +187,7 @@ class TenantController extends Controller{
             const createdTenant = await this.tenantService.registerTenant(newTenant);
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
 
-            // Emit tenant creation event
+            // Emit comprehensive tenant creation events
             EventService.emitTenantCreated({
                 tenantId: createdTenant._id as string,
                 name: createdTenant.name,
@@ -75,6 +195,29 @@ class TenantController extends Controller{
                 databaseName: createdTenant.databaseName,
                 databaseUser: createdTenant.databaseUser,
                 createdBy: userId!
+            }, EventService.createContextFromRequest(req));
+
+            // Emit audit trail
+            EventService.emitAuditTrail(
+                'tenant_created',
+                'tenant',
+                createdTenant._id as string,
+                userId!,
+                {
+                    name: createdTenant.name,
+                    subdomain: createdTenant.subdomain,
+                    databaseName: createdTenant.databaseName
+                },
+                EventService.createContextFromRequest(req)
+            );
+
+            // Emit CRUD operation event
+            EventService.emitCrudOperation({
+                operation: 'create',
+                resource: 'tenant',
+                resourceId: createdTenant._id as string,
+                userId: userId!,
+                data: sanitizedTenant
             }, EventService.createContextFromRequest(req));
 
             return responseResult.sendResponse({
@@ -200,6 +343,21 @@ class TenantController extends Controller{
 
             // Sanitize the tenant data to remove sensitive fields
             const sanitizedTenants = DataSanitizer.sanitizeData<ITenant[]>(result.items, ['databasePassword','updatedBy','__v']);
+
+            // Emit audit event for tenant list access
+            EventService.emitAuditTrail(
+                'tenant_list_accessed',
+                'tenant_list',
+                'system',
+                req.userId || 'anonymous',
+                {
+                    totalTenants: result.total || result.items?.length || 0,
+                    page: Number(page) || 1,
+                    limit: Number(limit) || 10,
+                    filters: filter
+                },
+                EventService.createContextFromRequest(req)
+            );
             
             return responseResult.sendResponse({
                 res,
@@ -239,6 +397,19 @@ class TenantController extends Controller{
                 });
             }
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(tenant, ['databasePassword','__v','createdAt','updatedAt', 'databaseUser','databaseName']);
+
+            // Emit tenant viewed event
+            EventService.emitAuditTrail(
+                'tenant_viewed',
+                'tenant',
+                id,
+                req.userId || 'anonymous',
+                {
+                    tenantName: tenant.name,
+                    subdomain: tenant.subdomain
+                },
+                EventService.createContextFromRequest(req)
+            );
             return responseResult.sendResponse({
                 res,
                 data: sanitizedTenant,
@@ -308,13 +479,43 @@ class TenantController extends Controller{
             const updatedTenant = await this.tenantService.update(id, { name, subdomain, updatedBy: userId });
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
             
-            // Emit tenant update event
+            // Emit comprehensive tenant update events
             EventService.emitTenantUpdated({
                 tenantId: id,
                 previousData: existingTenant,
                 newData: updatedTenant,
                 updatedFields: ['name', 'subdomain'],
                 updatedBy: userId!
+            }, EventService.createContextFromRequest(req));
+
+            // Emit audit trail
+            EventService.emitAuditTrail(
+                'tenant_updated',
+                'tenant',
+                id,
+                userId!,
+                {
+                    previousData: {
+                        name: existingTenant.name,
+                        subdomain: existingTenant.subdomain
+                    },
+                    newData: {
+                        name: updatedTenant.name,
+                        subdomain: updatedTenant.subdomain
+                    },
+                    updatedFields: ['name', 'subdomain']
+                },
+                EventService.createContextFromRequest(req)
+            );
+
+            // Emit CRUD operation event
+            EventService.emitCrudOperation({
+                operation: 'update',
+                resource: 'tenant',
+                resourceId: id,
+                userId: userId!,
+                data: sanitizedTenant,
+                previousData: DataSanitizer.sanitizeData<ITenant>(existingTenant, ['databasePassword'])
             }, EventService.createContextFromRequest(req));
 
             return responseResult.sendResponse({
@@ -353,12 +554,36 @@ class TenantController extends Controller{
             }
             const deletedCount = await this.tenantService.deleteTenant(id);
             
-            // Emit tenant deletion event
+            // Emit comprehensive tenant deletion events
             EventService.emitTenantDeleted(
                 id, 
                 req.userId!, 
                 EventService.createContextFromRequest(req)
             );
+
+            // Emit audit trail
+            EventService.emitAuditTrail(
+                'tenant_deleted',
+                'tenant',
+                id,
+                req.userId!,
+                {
+                    tenantName: existingTenant.name,
+                    subdomain: existingTenant.subdomain,
+                    databaseName: existingTenant.databaseName,
+                    deletedCount
+                },
+                EventService.createContextFromRequest(req)
+            );
+
+            // Emit CRUD operation event
+            EventService.emitCrudOperation({
+                operation: 'delete',
+                resource: 'tenant',
+                resourceId: id,
+                userId: req.userId!,
+                previousData: DataSanitizer.sanitizeData<ITenant>(existingTenant, ['databasePassword'])
+            }, EventService.createContextFromRequest(req));
 
             return responseResult.sendResponse({
                 res,
@@ -371,6 +596,134 @@ class TenantController extends Controller{
                 res,
                 message: (error as Error).message || "Internal Server Error",
                 statusCode: 500
+            });
+        }
+    }
+
+    // Cache management methods
+    private clearCache = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { patterns } = (req.body || {}) as { patterns?: string[] | string };
+            let totalCleared = 0;
+            
+            if (!patterns) {
+                totalCleared = await CacheService.clear();
+            } else if (Array.isArray(patterns)) {
+                for (const p of patterns) {
+                    totalCleared += await CacheService.clear(p);
+                }
+            } else {
+                totalCleared = await CacheService.clear(patterns);
+            }
+
+            // Emit cache clear event
+            EventService.emitAuditTrail(
+                'tenant_cache_cleared',
+                'cache',
+                'tenant_cache',
+                req.userId || 'system',
+                {
+                    patterns: patterns || 'all',
+                    clearedCount: totalCleared
+                },
+                EventService.createContextFromRequest(req)
+            );
+
+            return responseResult.sendResponse({
+                res,
+                data: { cleared: totalCleared },
+                message: `Tenant cache cleared (${totalCleared} keys)`,
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: 'Failed to clear tenant cache',
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
+
+    private getCacheStats = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const stats = CacheService.getStats();
+            const health = await CacheService.healthCheck();
+            
+            return responseResult.sendResponse({
+                res,
+                data: { stats, health },
+                message: 'Tenant cache stats retrieved',
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: 'Failed to get tenant cache stats',
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
+
+    private getTenantStats = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // Get basic tenant statistics using existing methods
+            const allTenantsResult = await this.tenantService.getTenantsWithPagination({
+                page: 1,
+                limit: 1000, // Get a large number to count all
+                filter: {}
+            });
+            
+            const totalTenants = allTenantsResult.total;
+            
+            // For now, assume all tenants are active (you can add status field later)
+            const activeTenants = totalTenants;
+            
+            // Get recent tenants (last 7 days)
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            const recentTenantsResult = await this.tenantService.getTenantsWithPagination({
+                page: 1,
+                limit: 1000,
+                filter: {
+                    createdAt: { $gte: sevenDaysAgo }
+                }
+            });
+            
+            const recentTenants = recentTenantsResult.total;
+            
+            const stats = {
+                total: totalTenants,
+                active: activeTenants,
+                recent: recentTenants,
+                inactive: 0, // Assuming all are active for now
+                timestamp: new Date().toISOString()
+            };
+
+            // Emit stats access event
+            EventService.emitAuditTrail(
+                'tenant_stats_accessed',
+                'tenant_stats',
+                'system',
+                req.userId || 'anonymous',
+                stats,
+                EventService.createContextFromRequest(req)
+            );
+
+            return responseResult.sendResponse({
+                res,
+                data: stats,
+                message: 'Tenant statistics retrieved successfully',
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: 'Failed to get tenant statistics',
+                statusCode: 500,
+                details: error
             });
         }
     }

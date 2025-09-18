@@ -226,7 +226,12 @@ class LoginController extends Controller {
             const newAccessToken = await this.tokenService.refreshTheAccessToken(incomingRefreshToken, connection);
             
             Logging.info(`Token refreshed for ${this.getContextInfo(req)}`);
-            return responseResult.sendResponse({ res, data: { accessToken: newAccessToken.token , refreshToken: req.cookies.refreshToken }, message: "Token refreshed successfully" });
+            
+
+            return responseResult.sendResponse({ res, data: { accessToken: newAccessToken.token , refreshToken: {
+                token: incomingRefreshToken,
+                expiresAt: newAccessToken.refreshTokenExpiry
+            }}, message: "Token refreshed successfully" });
         } catch (error) {
             Logging.error(`Error refreshing token: ${error}`);
             return errorResponse.sendError({ res, statusCode: 500, message: "Internal server error" });

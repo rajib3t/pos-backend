@@ -15,6 +15,8 @@ import addressRepository from "../repositories/address.repository";
 import { IAddress } from "@/models/address.model";
 import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
 import { EmitUserCreated, EmitUserUpdated, EmitUserDeleted, EmitUserViewed } from "../decorators/event.decorator";
+import CacheMiddleware from "../middlewares/cache.middleware";
+import CacheService from "../services/cache.service";
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
@@ -29,43 +31,174 @@ class TenantUserController extends Controller{
         this.userService = UserService.getInstance();
     }
 
+    // Cache admin handlers
+    private async clearCache(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { patterns } = (req.body || {}) as { patterns?: string[] | string };
+            let totalCleared = 0;
+            if (!patterns) {
+                totalCleared = await CacheService.clear();
+            } else if (Array.isArray(patterns)) {
+                for (const p of patterns) {
+                    totalCleared += await CacheService.clear(p);
+                }
+            } else {
+                totalCleared = await CacheService.clear(patterns);
+            }
+
+            return responseResult.sendResponse({
+                res,
+                data: { cleared: totalCleared },
+                message: `Cache cleared (${totalCleared} keys)` ,
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: 'Failed to clear cache',
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
+
+    private async getCacheStats(req: Request, res: Response, next: NextFunction) {
+        try {
+            const stats = CacheService.getStats();
+            const health = await CacheService.healthCheck();
+            return responseResult.sendResponse({
+                res,
+                data: { stats, health },
+                message: 'Cache stats',
+                statusCode: 200
+            });
+        } catch (error) {
+            return errorResponse.sendError({
+                res,
+                message: 'Failed to get cache stats',
+                statusCode: 500,
+                details: error
+            });
+        }
+    }
     private initializeRoutes() {
-        // Enhanced routes with event middleware
-        this.router.get('/:tenantId/users', 
+        // List users with rate limiting and caching
+        this.router.get(
+            '/:tenantId/users',
+            CacheMiddleware.rateLimit({
+                windowMs: 15 * 60 * 1000,
+                maxRequests: 100,
+                keyGenerator: (req) => `tenant:${req.params.tenantId}:users:list:${req.ip}`
+            }),
+            CacheMiddleware.cache({
+                ttl: 300,
+                prefix: 'users',
+                keyGenerator: (req) => {
+                    const { tenantId } = req.params as any;
+                    const queryStr = JSON.stringify(req.query || {});
+                    return `list:${tenantId}:${Buffer.from(queryStr).toString('base64')}`;
+                },
+                condition: (req) => {
+                    const email = req.query?.email?.toString();
+                    return !email || !email.includes('@admin');
+                }
+            }),
             EventEmissionMiddleware.forRead('user_list', {
                 extractResourceId: (req) => req.params.tenantId,
-                skipCrud: true // List operations don't need CRUD events
+                skipCrud: true
             }),
             this.asyncHandler(this.getUsers.bind(this))
         );
-        
-        this.router.post('/:tenantId/users', 
+
+        // Create user with rate limit and cache invalidation
+        this.router.post(
+            '/:tenantId/users',
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000,
+                maxRequests: 50,
+                keyGenerator: (req) => `tenant:${req.params.tenantId}:users:create:${req.ip}`
+            }),
+            CacheMiddleware.invalidate((req) => [
+                `users:list:${req.params.tenantId}:*`,
+                `users:stats:${req.params.tenantId}:*`,
+                `tenant:${req.params.tenantId}:summary`
+            ]),
             EventEmissionMiddleware.forCreate('user'),
             this.asyncHandler(this.create.bind(this))
         );
-        
-        this.router.get('/:tenantId/users/:userId', 
+
+        // Get user detail with caching
+        this.router.get(
+            '/:tenantId/users/:userId',
+            CacheMiddleware.cache({
+                ttl: 600,
+                prefix: 'user',
+                keyGenerator: (req) => `detail:${req.params.tenantId}:${req.params.userId}`,
+            }),
             EventEmissionMiddleware.forRead('user'),
             this.asyncHandler(this.getUser.bind(this))
         );
-        
-        this.router.patch('/:tenantId/users/:userId', 
+
+        // Update user with rate limit and cache invalidation
+        this.router.patch(
+            '/:tenantId/users/:userId',
+            CacheMiddleware.rateLimit({
+                windowMs: 15 * 60 * 1000,
+                maxRequests: 30,
+                keyGenerator: (req) => `tenant:${req.params.tenantId}:user:${req.params.userId}:update:${req.ip}`
+            }),
+            CacheMiddleware.invalidate((req) => [
+                `user:detail:${req.params.tenantId}:${req.params.userId}`,
+                `users:list:${req.params.tenantId}:*`,
+                `users:stats:${req.params.tenantId}:*`
+            ]),
             EventEmissionMiddleware.forUpdate('user'),
             this.asyncHandler(this.update.bind(this))
         );
-        
-        this.router.delete('/:tenantId/users/:userId', 
+
+        // Delete user with rate limit and cache invalidation
+        this.router.delete(
+            '/:tenantId/users/:userId',
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000,
+                maxRequests: 20,
+                keyGenerator: (req) => `tenant:${req.params.tenantId}:users:delete:${req.ip}`
+            }),
+            CacheMiddleware.invalidate((req) => [
+                `user:detail:${req.params.tenantId}:${req.params.userId}`,
+                `users:list:${req.params.tenantId}:*`,
+                `users:stats:${req.params.tenantId}:*`,
+                `tenant:${req.params.tenantId}:summary`
+            ]),
             EventEmissionMiddleware.forDelete('user'),
             this.asyncHandler(this.delete.bind(this))
         );
-        
-        this.router.patch('/:tenantId/users/:userId/reset-password', 
+
+        // Reset password with rate limit
+        this.router.patch(
+            '/:tenantId/users/:userId/reset-password',
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000,
+                maxRequests: 5,
+                keyGenerator: (req) => `tenant:${req.params.tenantId}:user:${req.params.userId}:password:${req.ip}`
+            }),
             EventEmissionMiddleware.createEventMiddleware({
                 resource: 'user',
                 operation: 'update',
                 customEventName: 'user.password.reset'
             }),
             this.asyncHandler(this.passwordReset.bind(this))
+        );
+
+        // Cache management endpoints
+        this.router.post(
+            '/:tenantId/cache/clear',
+            this.asyncHandler(this.clearCache.bind(this))
+        );
+
+        this.router.get(
+            '/:tenantId/cache/stats',
+            this.asyncHandler(this.getCacheStats.bind(this))
         );
     }
 
@@ -190,7 +323,7 @@ class TenantUserController extends Controller{
             EventService.emitAuditTrail(
                 'user_list_accessed',
                 'user_list',
-                tenantId,
+                tenant._id as string,
                 'system', // or req.userId if available
                 {
                     totalUsers: (result as any).total || (result as any).totalCount || result.items?.length || 0,
