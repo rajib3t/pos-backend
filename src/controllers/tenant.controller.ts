@@ -14,6 +14,16 @@ import EventService from "../events/EventService";
 import CacheMiddleware from "../middlewares/cache.middleware";
 import CacheService from "../services/cache.service";
 import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
+import ErrorHandler from "../errors/ErrorHandler";
+import { 
+    ValidationError, 
+    DatabaseError, 
+    NotFoundError, 
+    ConflictError,
+    isDatabaseError,
+    isValidationError 
+} from "../errors/CustomErrors";
+import { rateLimitConfig } from "../config";
 
 class TenantController extends Controller{
     private tenantService: TenantService;
@@ -29,8 +39,8 @@ class TenantController extends Controller{
             "/create", 
             ValidateMiddleware.getInstance().validate(tenantCreateSchema),
             CacheMiddleware.rateLimit({
-                windowMs: 60 * 60 * 1000, // 1 hour
-                maxRequests: 10,
+                windowMs: 15 * 60 * 1000, // 15 minutes
+                maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => `tenant:create:${req.ip}`
             }),
             CacheMiddleware.invalidate(() => [
@@ -48,8 +58,8 @@ class TenantController extends Controller{
             ValidateMiddleware.getInstance().validate(getTenantsSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
-                maxRequests: 100,
-                keyGenerator: (req) => `tenant:list:${req.ip}`
+                maxRequests: 1000,
+                keyGenerator: (req) => `tenant:list:${req.ip}:user:${req.userId}`
             }),
             CacheMiddleware.cache({
                 ttl: 300, // 5 minutes
@@ -84,7 +94,7 @@ class TenantController extends Controller{
             ValidateMiddleware.getInstance().validate(updateTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
-                maxRequests: 20,
+                maxRequests: 50,
                 keyGenerator: (req) => `tenant:${req.params.id}:update:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -153,32 +163,29 @@ class TenantController extends Controller{
     private create = async (req: Request , res: Response, next: NextFunction)=>  {
         const userId = req.userId; // Assuming req.user is populated by authentication middleware
         const {name, subdomain} = req.body;
-        if(!name || !subdomain){
-            return errorResponse.sendError({
-                res,
-                message: "Name and Subdomain are required",
-                statusCode: 400
-            });
-        }
-        const isNameTaken = await this.tenantService.checkTenantExists(name);
-        if(isNameTaken){
-            return errorResponse.sendError({
-                res,
-                message: "Validation failed",
-                statusCode: 409,
-                details: ["name: Name is already in use"],
-            });
-        }
-        const isAvailable = await this.tenantService.checkSubdomainAvailability(subdomain);
-        if(!isAvailable){
-            return errorResponse.sendError({
-                res,
-                message: "Validation failed",
-                statusCode: 409,
-                details: ["subdomain: Subdomain is already in use"],
-            });
-        }
+        
         try {
+            // Validation checks
+            if(!name || !subdomain){
+                throw new ValidationError("Name and Subdomain are required", [
+                    !name ? "name: Name is required" : "",
+                    !subdomain ? "subdomain: Subdomain is required" : ""
+                ].filter(Boolean));
+            }
+
+            // Check for existing name
+            const isNameTaken = await this.tenantService.checkTenantExists(name);
+            if(isNameTaken){
+                throw new ConflictError("Name is already in use", "name", name);
+            }
+
+            // Check for subdomain availability
+            const isAvailable = await this.tenantService.checkSubdomainAvailability(subdomain);
+            if(!isAvailable){
+                throw new ConflictError("Subdomain is already in use", "subdomain", subdomain);
+            }
+
+            // Create tenant
             const newTenant: Partial<ITenant> = {
                 name,
                 subdomain,
@@ -227,14 +234,42 @@ class TenantController extends Controller{
                 statusCode: 201
             });
         } catch (error) {
+            // Enhanced error handling with specific error types
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof ConflictError) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: [`${error.conflictField}: ${error.message}`]
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant creation:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant creation:", error);
             return errorResponse.sendError({
                 res,
-                message: (error as Error).message || "Internal Server Error",
+                message: "Internal Server Error",
                 statusCode: 500
             });
         }
-        
-
     }
 
     private index = async (req: Request , res: Response, next: NextFunction)=>  {
@@ -369,9 +404,30 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for tenant listing
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant listing:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant listing:", error);
             return errorResponse.sendError({
                 res,
-                message: (error as Error).message || "Internal Server Error",
+                message: "Internal Server Error",
                 statusCode: 500
             });
         }
@@ -380,22 +436,18 @@ class TenantController extends Controller{
 
     private getTenant = async (req: Request , res: Response, next: NextFunction)=>  {
         const { id } = req.params;
-        if(!id){
-            return errorResponse.sendError({
-                res,
-                message: "Tenant ID is required",
-                statusCode: 400
-            });
-        }
+        
         try {
+            // Validation
+            if(!id){
+                throw new ValidationError("Tenant ID is required", ["id: Tenant ID is required"]);
+            }
+
             const tenant = await this.tenantService.findByIdWithRelations(id);
             if(!tenant){
-                return errorResponse.sendError({
-                    res,
-                    message: "Tenant not found",
-                    statusCode: 404
-                });
+                throw new NotFoundError("Tenant not found", "tenant", id);
             }
+            
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(tenant, ['databasePassword','__v','createdAt','updatedAt', 'databaseUser','databaseName']);
 
             // Emit tenant viewed event
@@ -410,6 +462,7 @@ class TenantController extends Controller{
                 },
                 EventService.createContextFromRequest(req)
             );
+            
             return responseResult.sendResponse({
                 res,
                 data: sanitizedTenant,
@@ -417,9 +470,42 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for tenant retrieval
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant retrieval:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant retrieval:", error);
             return errorResponse.sendError({
                 res,
-                message: (error as Error).message || "Internal Server Error",
+                message: "Internal Server Error",
                 statusCode: 500
             });
         }
@@ -429,53 +515,43 @@ class TenantController extends Controller{
         const userId = req.userId; // Assuming req.user is populated by authentication middleware
         const { id } = req.params;
         const {name, subdomain} = req.body;
-        if(!id){
-            return errorResponse.sendError({
-                res,
-                message: "Tenant ID is required",
-                statusCode: 400
-            });
-        }
-        if(!name || !subdomain){
-            return errorResponse.sendError({
-                res,
-                message: "Name and Subdomain are required",
-                statusCode: 400
-            });
-        }
-        const existingTenant = await this.tenantService.findByIdWithRelations(id);
-        if(!existingTenant){
-            return errorResponse.sendError({
-                res,
-                message: "Tenant not found",
-                statusCode: 404
-            });
-        }
-        if(existingTenant.name !== name){
-            const isNameTaken = await this.tenantService.checkTenantExists(name);
-            if(isNameTaken){
-                return errorResponse.sendError({
-                    res,
-                    message: "Validation failed",
-                    statusCode: 409,
-                    details: ["name: Name is already in use"],
-                });
-            }
-        }
-        if(existingTenant.subdomain !== subdomain){
-            const isAvailable = await this.tenantService.checkSubdomainAvailability(subdomain);
-            if(!isAvailable){
-                return errorResponse.sendError({
-                    res,
-                    message: "Validation failed",
-                    statusCode: 409,
-                    details: ["subdomain: Subdomain is already in use"],
-                });
-            }
-        }
         
-
         try {
+            // Validation checks
+            if(!id){
+                throw new ValidationError("Tenant ID is required", ["id: Tenant ID is required"]);
+            }
+            
+            if(!name || !subdomain){
+                throw new ValidationError("Name and Subdomain are required", [
+                    !name ? "name: Name is required" : "",
+                    !subdomain ? "subdomain: Subdomain is required" : ""
+                ].filter(Boolean));
+            }
+
+            // Check if tenant exists
+            const existingTenant = await this.tenantService.findByIdWithRelations(id);
+            if(!existingTenant){
+                throw new NotFoundError("Tenant not found", "tenant", id);
+            }
+
+            // Check for name conflicts (only if name is changing)
+            if(existingTenant.name !== name){
+                const isNameTaken = await this.tenantService.checkTenantExists(name);
+                if(isNameTaken){
+                    throw new ConflictError("Name is already in use", "name", name);
+                }
+            }
+
+            // Check for subdomain conflicts (only if subdomain is changing)
+            if(existingTenant.subdomain !== subdomain){
+                const isAvailable = await this.tenantService.checkSubdomainAvailability(subdomain);
+                if(!isAvailable){
+                    throw new ConflictError("Subdomain is already in use", "subdomain", subdomain);
+                }
+            }
+
+            // Update tenant
             const updatedTenant = await this.tenantService.update(id, { name, subdomain, updatedBy: userId });
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
             
@@ -525,9 +601,51 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for tenant update
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (error instanceof ConflictError) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: [`${error.conflictField}: ${error.message}`]
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant update:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant update:", error);
             return errorResponse.sendError({
                 res,
-                message: (error as Error).message || "Internal Server Error",
+                message: "Internal Server Error",
                 statusCode: 500
             });
         }
@@ -536,22 +654,20 @@ class TenantController extends Controller{
 
     private delete = async (req: Request , res: Response, next: NextFunction)=>  {
         const { id } = req.params;
-        if(!id){
-            return errorResponse.sendError({
-                res,
-                message: "Tenant ID is required",
-                statusCode: 400
-            });
-        }
+        
         try {
+            // Validation
+            if(!id){
+                throw new ValidationError("Tenant ID is required", ["id: Tenant ID is required"]);
+            }
+
+            // Check if tenant exists
             const existingTenant = await this.tenantService.findByIdWithRelations(id);
             if(!existingTenant){
-                return errorResponse.sendError({
-                    res,
-                    message: "Tenant not found",
-                    statusCode: 404
-                });
+                throw new NotFoundError("Tenant not found", "tenant", id);
             }
+
+            // Delete tenant
             const deletedCount = await this.tenantService.deleteTenant(id);
             
             // Emit comprehensive tenant deletion events
@@ -592,9 +708,42 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for tenant deletion
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant deletion:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant deletion:", error);
             return errorResponse.sendError({
                 res,
-                message: (error as Error).message || "Internal Server Error",
+                message: "Internal Server Error",
                 statusCode: 500
             });
         }
@@ -636,11 +785,23 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for cache clearing
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in cache clearing:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed during cache clearing",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in cache clearing:", error);
             return errorResponse.sendError({
                 res,
                 message: 'Failed to clear tenant cache',
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }
@@ -657,11 +818,23 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for cache stats
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in cache stats retrieval:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed during cache stats retrieval",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in cache stats retrieval:", error);
             return errorResponse.sendError({
                 res,
                 message: 'Failed to get tenant cache stats',
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }
@@ -719,11 +892,23 @@ class TenantController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
+            // Enhanced error handling for tenant statistics
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in tenant statistics retrieval:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed during statistics retrieval",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in tenant statistics retrieval:", error);
             return errorResponse.sendError({
                 res,
                 message: 'Failed to get tenant statistics',
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }

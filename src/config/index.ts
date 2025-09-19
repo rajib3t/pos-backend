@@ -69,3 +69,12 @@ export const notificationConfig = {
 };
 
 
+// Rate limiting configuration
+export const rateLimitConfig = {
+    get: Number(process.env.RATE_LIMIT_GET || 100), // Default 100 requests per window
+    post: Number(process.env.RATE_LIMIT_POST || 100), // Default 100 requests per window
+    put: Number(process.env.RATE_LIMIT_PUT || 50), // Default 50 requests per window
+    delete: Number(process.env.RATE_LIMIT_DELETE || 20), // Default 20 requests per window
+    patch: Number(process.env.RATE_LIMIT_PATCH || 100) // Default 100 requests per window
+};
+
