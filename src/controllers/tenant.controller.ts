@@ -21,7 +21,13 @@ import {
     NotFoundError, 
     ConflictError,
     isDatabaseError,
-    isValidationError 
+    isValidationError, 
+    CreationFailedError,
+    UpdateFailedError,
+    DeletionFailedError,
+    isCreationFailedError,
+    isUpdateFailedError,
+    isDeletionFailedError
 } from "../errors/CustomErrors";
 import { rateLimitConfig } from "../config";
 
@@ -58,7 +64,7 @@ class TenantController extends Controller{
             ValidateMiddleware.getInstance().validate(getTenantsSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
-                maxRequests: 1000,
+                maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => `tenant:list:${req.ip}:user:${req.userId}`
             }),
             CacheMiddleware.cache({
@@ -94,7 +100,7 @@ class TenantController extends Controller{
             ValidateMiddleware.getInstance().validate(updateTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
-                maxRequests: 50,
+                maxRequests: rateLimitConfig.put,
                 keyGenerator: (req) => `tenant:${req.params.id}:update:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -112,7 +118,7 @@ class TenantController extends Controller{
             ValidateMiddleware.getInstance().validate(deleteTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 60 * 1000, // 1 hour
-                maxRequests: 5,
+                maxRequests: rateLimitConfig.delete,
                 keyGenerator: (req) => `tenant:${req.params.id}:delete:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -130,7 +136,7 @@ class TenantController extends Controller{
             "/cache/clear",
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 60 * 1000, // 1 hour
-                maxRequests: 10,
+                maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => `tenant:cache:clear:${req.ip}`
             }),
             this.asyncHandler(this.clearCache)
@@ -140,7 +146,7 @@ class TenantController extends Controller{
             "/cache/stats",
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 1000, // 1 minute
-                maxRequests: 30,
+                maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => `tenant:cache:stats:${req.ip}`
             }),
             this.asyncHandler(this.getCacheStats)
@@ -192,8 +198,15 @@ class TenantController extends Controller{
                 createdBy: userId,
             }
             const createdTenant = await this.tenantService.registerTenant(newTenant);
+            if(!createdTenant){
+                throw new CreationFailedError(
+                    "Failed to create tenant", 
+                    "tenant", 
+                    "Database operation failed", 
+                    ["name", "subdomain"]
+                );
+            }
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
-
             // Emit comprehensive tenant creation events
             EventService.emitTenantCreated({
                 tenantId: createdTenant._id as string,
@@ -250,6 +263,20 @@ class TenantController extends Controller{
                     message: "Validation failed",
                     statusCode: 409,
                     details: [`${error.conflictField}: ${error.message}`]
+                });
+            }
+
+            if (isCreationFailedError(error)) {
+                Logging.warn("Tenant creation failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
                 });
             }
 
@@ -553,6 +580,15 @@ class TenantController extends Controller{
 
             // Update tenant
             const updatedTenant = await this.tenantService.update(id, { name, subdomain, updatedBy: userId });
+            if(!updatedTenant){
+                throw new UpdateFailedError(
+                    "Failed to update tenant", 
+                    "tenant", 
+                    id, 
+                    "Database operation failed", 
+                    ["name", "subdomain"]
+                );
+            }
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(updatedTenant, ['databasePassword']);
             
             // Emit comprehensive tenant update events
@@ -632,6 +668,21 @@ class TenantController extends Controller{
                 });
             }
 
+            if (isUpdateFailedError(error)) {
+                Logging.warn("Tenant update failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
+                });
+            }
+
             if (isDatabaseError(error)) {
                 Logging.error("Database error in tenant update:", error);
                 return errorResponse.sendError({
@@ -668,7 +719,16 @@ class TenantController extends Controller{
             }
 
             // Delete tenant
-            const deletedCount = await this.tenantService.deleteTenant(id);
+            try {
+                await this.tenantService.deleteTenant(id);
+            } catch (deleteError) {
+                throw new DeletionFailedError(
+                    "Failed to delete tenant", 
+                    "tenant", 
+                    id, 
+                    "Tenant may have dependencies or database operation failed"
+                );
+            }
             
             // Emit comprehensive tenant deletion events
             EventService.emitTenantDeleted(
@@ -687,7 +747,7 @@ class TenantController extends Controller{
                     tenantName: existingTenant.name,
                     subdomain: existingTenant.subdomain,
                     databaseName: existingTenant.databaseName,
-                    deletedCount
+                    deleted: true
                 },
                 EventService.createContextFromRequest(req)
             );
@@ -703,7 +763,7 @@ class TenantController extends Controller{
 
             return responseResult.sendResponse({
                 res,
-                data: { deletedCount },
+                data: { deleted: true },
                 message: "Tenant deleted successfully",
                 statusCode: 200
             });
@@ -726,6 +786,21 @@ class TenantController extends Controller{
                     details: {
                         resource: error.resource,
                         resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isDeletionFailedError(error)) {
+                Logging.warn("Tenant deletion failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        dependencies: error.dependencies
                     }
                 });
             }

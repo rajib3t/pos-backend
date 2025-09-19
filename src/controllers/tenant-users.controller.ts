@@ -17,6 +17,24 @@ import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
 import { EmitUserCreated, EmitUserUpdated, EmitUserDeleted, EmitUserViewed } from "../decorators/event.decorator";
 import CacheMiddleware from "../middlewares/cache.middleware";
 import CacheService from "../services/cache.service";
+import { changeUserPasswordForTenantSchema, createUserForTenantSchema, deleteUserForTenantSchema, getUserForTenantSchema, getUsersForTenantSchema, updateUserForTenantSchema } from "../validators/user.validator";
+import ValidateMiddleware from "../middlewares/validate";
+import { 
+    ConflictError, 
+    CreationFailedError, 
+    NotFoundError, 
+    UpdateFailedError, 
+    ValidationError, 
+    DeletionFailedError,
+    DatabaseError,
+    isValidationError,
+    isCreationFailedError,
+    isUpdateFailedError,
+    isDeletionFailedError,
+    isDatabaseError
+} from "../errors/CustomErrors";
+import { rateLimitConfig } from "../config";
+import { th } from "zod/locales";
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
@@ -85,9 +103,10 @@ class TenantUserController extends Controller{
         // List users with rate limiting and caching
         this.router.get(
             '/:tenantId/users',
+            ValidateMiddleware.getInstance().validate(getUsersForTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000,
-                maxRequests: 100,
+                maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:users:list:${req.ip}`
             }),
             CacheMiddleware.cache({
@@ -113,9 +132,10 @@ class TenantUserController extends Controller{
         // Create user with rate limit and cache invalidation
         this.router.post(
             '/:tenantId/users',
+            ValidateMiddleware.getInstance().validate(createUserForTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 60 * 1000,
-                maxRequests: 50,
+                maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:users:create:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -130,6 +150,8 @@ class TenantUserController extends Controller{
         // Get user detail with caching
         this.router.get(
             '/:tenantId/users/:userId',
+            ValidateMiddleware.getInstance().validate(getUserForTenantSchema),
+           
             CacheMiddleware.cache({
                 ttl: 600,
                 prefix: 'user',
@@ -142,9 +164,10 @@ class TenantUserController extends Controller{
         // Update user with rate limit and cache invalidation
         this.router.patch(
             '/:tenantId/users/:userId',
+            ValidateMiddleware.getInstance().validate(updateUserForTenantSchema.partial({ body: true })),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000,
-                maxRequests: 30,
+                maxRequests: rateLimitConfig.patch,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:user:${req.params.userId}:update:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -159,9 +182,10 @@ class TenantUserController extends Controller{
         // Delete user with rate limit and cache invalidation
         this.router.delete(
             '/:tenantId/users/:userId',
+            ValidateMiddleware.getInstance().validate(deleteUserForTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 60 * 1000,
-                maxRequests: 20,
+                maxRequests: rateLimitConfig.delete,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:users:delete:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => [
@@ -177,9 +201,10 @@ class TenantUserController extends Controller{
         // Reset password with rate limit
         this.router.patch(
             '/:tenantId/users/:userId/reset-password',
+            ValidateMiddleware.getInstance().validate(changeUserPasswordForTenantSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 60 * 60 * 1000,
-                maxRequests: 5,
+                maxRequests: rateLimitConfig.patch,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:user:${req.params.userId}:password:${req.ip}`
             }),
             EventEmissionMiddleware.createEventMiddleware({
@@ -218,11 +243,7 @@ class TenantUserController extends Controller{
 
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
-                return errorResponse.sendError({
-                    res,
-                    message: "Tenant not found",
-                    statusCode: 404
-                });
+                throw new NotFoundError("Tenant not found", "tenant", tenantId);
             }
 
             // Build filter object based on query parameters
@@ -309,11 +330,7 @@ class TenantUserController extends Controller{
             
             if (!result) {
 
-                return errorResponse.sendError({
-                    res,
-                    message: "Failed to fetch users",
-                    statusCode: 404
-                });
+                throw new NotFoundError("No users found", "tenant", tenantId);
 
             }
             // Sanitize the tenant data to remove sensitive fields
@@ -347,13 +364,45 @@ class TenantUserController extends Controller{
            
 
             
-        }catch (error) {
-            Logging.info("Error fetching users:", error);
+        } catch (error) {
+            // Enhanced error handling for user listing
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in user listing:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in user listing:", error);
             return errorResponse.sendError({
                 res,
                 message: "Failed to fetch users",
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
 
@@ -379,41 +428,26 @@ class TenantUserController extends Controller{
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
                    
-                return errorResponse.sendError({
-                    res,
-                    message: "Tenant not found",
-                    statusCode: 404
-                });
+                throw new NotFoundError("Tenant not found", "tenant", tenantId);
             }
             const connection = await this.connectionService.getTenantConnection(tenant.subdomain);
             // create a connection to the tenant's database
             const existingUser = await this.userService.findByEmail(connection.connection, userData.email);
             if (existingUser) {
-                return errorResponse.sendError({
-                    res,
-                    message: "Validation failed",
-                    statusCode: 409,
-                    details: ["email: Email is already in use"],
-                });
+                throw new ConflictError("Email is already in use", "email", userData.email);
+                
             }
 
             const existingUserByMobile = await this.userService.findByMobile(connection.connection, userData.mobile);
             if (existingUserByMobile) {
-                return errorResponse.sendError({
-                    res,
-                    message: "Validation failed",
-                    statusCode: 409,
-                    details: ["mobile: Mobile number is already in use"],
-                });
+                throw new ConflictError("Mobile number is already in use", "mobile", userData.mobile);
+                
             }
             const hashedPassword = await hashPassword(userData.password);
             const user = await this.userService.create(connection.connection, { ...userData, password: hashedPassword });
             if (!user) {
-                return errorResponse.sendError({
-                    res,
-                    message: "Failed to create user",
-                    statusCode: 500
-                });
+                throw new CreationFailedError("Failed to create user", "user", "Failed to create user");
+                
             }
 
             // Emit user created event with comprehensive data
@@ -429,6 +463,8 @@ class TenantUserController extends Controller{
 
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
+            
+
               return responseResult.sendResponse({  
                 res,
                 data: sanitizedUser,
@@ -436,12 +472,67 @@ class TenantUserController extends Controller{
                 statusCode: 201
             });
         } catch (error) {
-            Logging.error("Error creating user:", error);
+            // Enhanced error handling for user creation
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (error instanceof ConflictError) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: [`${error.conflictField}: ${error.message}`]
+                });
+            }
+
+            if (isCreationFailedError(error)) {
+                Logging.warn("User creation failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in user creation:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in user creation:", error);
             return errorResponse.sendError({
                 res,
                 message: "Failed to create user",
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }
@@ -451,22 +542,18 @@ class TenantUserController extends Controller{
     const tenantId = req.params.tenantId;
     const userId = req.params.userId;
     
-    if (!tenantId || !userId) {
-        return errorResponse.sendError({
-            res,
-            message: "Tenant ID and User ID are required",
-            statusCode: 400
-        });
-    }
+        if (!tenantId ) {
+            throw new NotFoundError("Tenant not found", "tenant", tenantId);
+        }
+
+        if (!userId ) {
+            throw new NotFoundError("User not found", "user", userId);
+        }
 
     try {
         const tenant = await this.tenantService.findById(tenantId);
         if (!tenant) {
-            return errorResponse.sendError({
-                res,
-                message: "Tenant not found",
-                statusCode: 404
-            });
+             throw new NotFoundError("User not found", "tenant", tenantId);
         }
 
         // Create a connection to the tenant's database
@@ -506,12 +593,44 @@ class TenantUserController extends Controller{
             statusCode: 200
         });
     } catch (error) {
-        Logging.info("Error fetching user:", error);
+        // Enhanced error handling for user retrieval
+        if (isValidationError(error)) {
+            return errorResponse.sendError({
+                res,
+                message: error.message,
+                statusCode: 400,
+                details: error.details
+            });
+        }
+
+        if (error instanceof NotFoundError) {
+            return errorResponse.sendError({
+                res,
+                message: error.message,
+                statusCode: 404,
+                details: {
+                    resource: error.resource,
+                    resourceId: error.resourceId
+                }
+            });
+        }
+
+        if (isDatabaseError(error)) {
+            Logging.error("Database error in user retrieval:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Database operation failed",
+                statusCode: 500
+            });
+        }
+
+        // Log unexpected errors
+        Logging.error("Unexpected error in user retrieval:", error);
         return errorResponse.sendError({
             res,
             message: "Failed to fetch user",
             statusCode: 500,
-            details: error
+            details: process.env.NODE_ENV === 'development' ? error : undefined
         });
     }   
     }
@@ -523,11 +642,10 @@ class TenantUserController extends Controller{
         const updateData = req.body;
 
         if (!tenantId || !userId) {
-            return errorResponse.sendError({
-                res,
-                message: "Tenant ID and User ID are required",
-                statusCode: 400
-            });
+             throw new ValidationError("User ID and Tenant ID are required", [
+                !userId ? "userId: User ID is required" : "",
+                !tenantId ? "tenantId: Tenant ID is required" : ""
+            ].filter(Boolean));
         }
 
         try {
@@ -547,13 +665,8 @@ class TenantUserController extends Controller{
                 const existingUser = await this.userService.findByEmail(connection.connection, updateData.email);
                 
                 if (existingUser && String(existingUser._id) !== userId) {
-                  
-                    return errorResponse.sendError({
-                        res,
-                        message: "Validation failed",
-                        statusCode: 409,
-                        details: ["email: Email is already in use"],
-                    });
+
+                    throw new ConflictError("Email is already in use", "email", updateData.email);
                 }
             }
             // Check for mobile uniqueness (exclude current user)
@@ -561,13 +674,8 @@ class TenantUserController extends Controller{
                 const existingUserByMobile = await this.userService.findByMobile(connection.connection, updateData.mobile);
                
                 if (existingUserByMobile && String(existingUserByMobile._id) !== userId) {
-                   
-                    return errorResponse.sendError({
-                        res,
-                        message: "Validation failed",
-                        statusCode: 409,
-                        details: ["mobile: Mobile number is already in use"],
-                    });
+
+                    throw new ConflictError("Mobile number is already in use", "mobile", updateData.mobile);
                 }
             }
 
@@ -579,11 +687,13 @@ class TenantUserController extends Controller{
             
             const updatedUser = await this.userService.update(connection.connection, userId, {email: updateData.email, name: updateData.name, mobile: updateData.mobile});
             if (!updatedUser) {
-                return errorResponse.sendError({
-                    res,
-                    message: "User not found or no changes made",
-                    statusCode: 404
-                });
+                throw new UpdateFailedError(
+                    "Failed to update user", 
+                    "user", 
+                    userId, 
+                    "User not found or no changes made", 
+                    ["email", "name", "mobile"]
+                );
             }
 
             // Emit user updated event
@@ -677,12 +787,68 @@ class TenantUserController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
-            Logging.error("Error updating user:", error);
+            // Enhanced error handling for user update
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof ConflictError) {
+                return errorResponse.sendError({
+                    res,
+                    message: "Validation failed",
+                    statusCode: 409,
+                    details: [`${error.conflictField}: ${error.message}`]
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isUpdateFailedError(error)) {
+                Logging.warn("User update failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in user update:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in user update:", error);
             return errorResponse.sendError({
                 res,
                 message: "Failed to update user",
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
 
@@ -729,11 +895,12 @@ class TenantUserController extends Controller{
             await userAddress.deleteByUserId(userId);
             const deletedUser = await this.userService.delete(connection.connection, userId);
             if (!deletedUser) {
-                return errorResponse.sendError({
-                    res,
-                    message: "User not found",
-                    statusCode: 404
-                });
+                throw new DeletionFailedError(
+                    "Failed to delete user", 
+                    "user", 
+                    userId, 
+                    "User not found or deletion operation failed"
+                );
             }
 
             // Emit user deleted event
@@ -759,12 +926,59 @@ class TenantUserController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
-            Logging.error("Error deleting user:", error);
+            // Enhanced error handling for user deletion
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isDeletionFailedError(error)) {
+                Logging.warn("User deletion failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        dependencies: error.dependencies
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in user deletion:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in user deletion:", error);
             return errorResponse.sendError({
                 res,
                 message: "Failed to delete user",
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }
@@ -833,12 +1047,59 @@ class TenantUserController extends Controller{
                 statusCode: 200
             });
         } catch (error) {
-            Logging.error("Error updating password:", error);
+            // Enhanced error handling for password reset
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isUpdateFailedError(error)) {
+                Logging.warn("Password reset failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in password reset:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in password reset:", error);
             return errorResponse.sendError({
                 res,
                 message: "Failed to update password",
                 statusCode: 500,
-                details: error
+                details: process.env.NODE_ENV === 'development' ? error : undefined
             });
         }
     }

@@ -13,6 +13,8 @@ import {
     ExternalServiceError,
     RateLimitError,
     BusinessLogicError,
+    CreationFailedError,
+    UpdateFailedError,
     isValidationError,
     isDatabaseError,
     isNotFoundError,
@@ -23,6 +25,8 @@ import {
     isExternalServiceError,
     isRateLimitError,
     isBusinessLogicError,
+    isCreationFailedError,
+    isUpdateFailedError,
     convertMongoError,
     convertZodError
 } from './CustomErrors';
@@ -105,6 +109,16 @@ export class ErrorHandler {
         // Handle business logic errors
         if (isBusinessLogicError(error)) {
             return ErrorHandler.sendBusinessLogicError(res, error);
+        }
+
+        // Handle creation failed errors
+        if (isCreationFailedError(error)) {
+            return ErrorHandler.sendCreationFailedError(res, error);
+        }
+
+        // Handle update failed errors
+        if (isUpdateFailedError(error)) {
+            return ErrorHandler.sendUpdateFailedError(res, error);
         }
 
         // Handle unexpected errors
@@ -234,6 +248,33 @@ export class ErrorHandler {
         });
     }
 
+    private static sendCreationFailedError(res: Response, error: CreationFailedError): Response {
+        return errorResponse.sendError({
+            res,
+            message: error.message,
+            statusCode: error.statusCode,
+            details: {
+                resource: error.resource,
+                reason: error.reason,
+                failedFields: error.failedFields
+            }
+        });
+    }
+
+    private static sendUpdateFailedError(res: Response, error: UpdateFailedError): Response {
+        return errorResponse.sendError({
+            res,
+            message: error.message,
+            statusCode: error.statusCode,
+            details: {
+                resource: error.resource,
+                resourceId: error.resourceId,
+                reason: error.reason,
+                failedFields: error.failedFields
+            }
+        });
+    }
+
     private static sendUnexpectedError(res: Response, error: any, context?: ErrorContext): Response {
         // Log unexpected errors with full context
         Logging.error(`Unexpected error in ${context?.operation || 'unknown operation'}:`, {
@@ -267,7 +308,8 @@ export class ErrorHandler {
         };
 
         // Log with appropriate level based on error type
-        if (isValidationError(error) || isNotFoundError(error) || isConflictError(error)) {
+        if (isValidationError(error) || isNotFoundError(error) || isConflictError(error) || 
+            isCreationFailedError(error) || isUpdateFailedError(error)) {
             Logging.warn('Client error:', logData);
         } else if (isDatabaseError(error) || isCacheError(error) || isExternalServiceError(error)) {
             Logging.error('System error:', logData);

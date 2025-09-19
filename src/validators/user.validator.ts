@@ -1,5 +1,7 @@
 import { z } from "zod";
 import UserService from "../services/user.service";
+import { create } from "domain";
+import { fi } from "zod/v4/locales";
 const profileUpdateSchema = z.object({
     body: z.object({
         name: z.string().min(1, "Name is required").max(100, "Name is too long").optional(),
@@ -84,4 +86,89 @@ const validateMobileUniqueness = async (
     }
 }
 
-export { profileUpdateSchema, validateEmailUniqueness, validateMobileUniqueness};
+
+const createUserForTenantSchema = z.object({
+    body: z.object({
+        name: z.string().min(1, "Name is required").max(100, "Name is too long"),
+        email: z.string().trim().pipe(z.email()),
+        mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(10, "Mobile number must be exactly 10 digits"),
+        password: z.string().min(6, "Password must be at least 8 characters").max(100, "Password is too long"),
+        role: z.enum(['admin', 'user', 'manager'])
+
+    }),
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+    })
+});
+
+const getUsersForTenantSchema = z.object({
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+    }),
+    query: z.object({
+        page: z.string().regex(/^\d+$/, "Page must be numeric").optional(),
+        limit: z.string().regex(/^\d+$/, "Limit must be numeric").optional(),
+        name: z.string().optional(),
+        email: z.string().optional(),
+        mobile: z.string().optional(),
+        role: z.enum(['admin', 'user', 'manager']).optional(),
+        createdAtFrom: z.string().optional(),
+        createdAtTo: z.string().optional(),
+        sortField: z.string().optional(),
+        sortDirection: z.enum(["asc", "desc"]).optional(),
+    })
+});
+
+const getUserForTenantSchema = z.object({
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+        userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+const updateUserForTenantSchema = z.object({
+    body: z.object({
+        name: z.string().min(1, "Name is required").max(100, "Name is too long").optional(),
+        email: z.string().trim().pipe(z.email()).optional(),
+        mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(10, "Mobile number must be exactly 10 digits").optional(),
+        address: z.string().max(200, "Address is too long").optional(),
+        city: z.string().max(100, "City is too long").optional(),
+        country: z.string().max(100, "Country is too long").optional(),
+        postalCode: z.string().min(6, "Postal code must be at least 6 characters").max(6, "Postal code is too long").optional(),
+
+    }),
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+        userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+const deleteUserForTenantSchema = z.object({
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+        userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+const changeUserPasswordForTenantSchema = z.object({
+    body: z.object({
+        
+        newPassword: z.string().min(6, "New password must be at least 6 characters").max(100, "New password is too long"),
+    }),
+    params: z.object({
+        tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+        userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+export { 
+    profileUpdateSchema, 
+    validateEmailUniqueness, 
+    validateMobileUniqueness, 
+    createUserForTenantSchema,
+    getUsersForTenantSchema,
+    getUserForTenantSchema,
+    updateUserForTenantSchema,
+    deleteUserForTenantSchema,
+    changeUserPasswordForTenantSchema
+};

@@ -160,6 +160,67 @@ export class BusinessLogicError extends Error {
     }
 }
 
+export class CreationFailedError extends Error {
+    public readonly statusCode: number = 422;
+    public readonly resource?: string;
+    public readonly reason?: string;
+    public readonly failedFields?: string[];
+
+    constructor(message: string, resource?: string, reason?: string, failedFields?: string[]) {
+        super(message);
+        this.name = 'CreationFailedError';
+        this.resource = resource;
+        this.reason = reason;
+        this.failedFields = failedFields;
+        
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, CreationFailedError);
+        }
+    }
+}
+
+export class UpdateFailedError extends Error {
+    public readonly statusCode: number = 422;
+    public readonly resource?: string;
+    public readonly resourceId?: string;
+    public readonly reason?: string;
+    public readonly failedFields?: string[];
+
+    constructor(message: string, resource?: string, resourceId?: string, reason?: string, failedFields?: string[]) {
+        super(message);
+        this.name = 'UpdateFailedError';
+        this.resource = resource;
+        this.resourceId = resourceId;
+        this.reason = reason;
+        this.failedFields = failedFields;
+        
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, UpdateFailedError);
+        }
+    }
+}
+
+export class DeletionFailedError extends Error {
+    public readonly statusCode: number = 422;
+    public readonly resource?: string;
+    public readonly resourceId?: string;
+    public readonly reason?: string;
+    public readonly dependencies?: string[];
+
+    constructor(message: string, resource?: string, resourceId?: string, reason?: string, dependencies?: string[]) {
+        super(message);
+        this.name = 'DeletionFailedError';
+        this.resource = resource;
+        this.resourceId = resourceId;
+        this.reason = reason;
+        this.dependencies = dependencies;
+        
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, DeletionFailedError);
+        }
+    }
+}
+
 // Type guard functions for error checking
 export const isValidationError = (error: any): error is ValidationError => {
     return error instanceof ValidationError || error.name === 'ValidationError';
@@ -201,6 +262,18 @@ export const isRateLimitError = (error: any): error is RateLimitError => {
 
 export const isBusinessLogicError = (error: any): error is BusinessLogicError => {
     return error instanceof BusinessLogicError || error.name === 'BusinessLogicError';
+};
+
+export const isCreationFailedError = (error: any): error is CreationFailedError => {
+    return error instanceof CreationFailedError || error.name === 'CreationFailedError';
+};
+
+export const isUpdateFailedError = (error: any): error is UpdateFailedError => {
+    return error instanceof UpdateFailedError || error.name === 'UpdateFailedError';
+};
+
+export const isDeletionFailedError = (error: any): error is DeletionFailedError => {
+    return error instanceof DeletionFailedError || error.name === 'DeletionFailedError';
 };
 
 // Utility function to convert MongoDB errors to custom errors
