@@ -37,24 +37,8 @@ class UserService {
             const data = userData!;
             
             try {
-                const UserModel = TenantModelFactory.getUserModel(connection);
-                
-                // Validate required fields
-                if (!data.name || !data.email || !data.password) {
-                    throw new Error('Name, email, and password are required');
-                }
-
-                // Check if user already exists
-                const existingUser = await UserModel.findOne({ email: data.email });
-                if (existingUser) {
-                    throw new Error('User with this email already exists');
-                }
-
-                const user = new UserModel(data);
-                const savedUser = await user.save();
-                
-                Logging.info(`User created: ${savedUser.email}`);
-                return savedUser;
+                const tenantUserRepository = new UserRepository(connection);
+                return await tenantUserRepository.create(data);
             } catch (error) {
                 Logging.error(`Failed to create user: ${error}`);
                 throw error;
