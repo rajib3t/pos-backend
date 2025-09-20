@@ -35,6 +35,8 @@ export interface TenantCreatedPayload extends EventPayload {
     databaseName: string;
     databaseUser: string;
     createdBy: string;
+    ownerEmail?: string;
+    ownerName?: string;
 }
 
 export interface TenantDatabaseCreatedPayload extends EventPayload {
@@ -136,7 +138,7 @@ export interface UserCreatedPayload extends EventPayload {
     tenantId?: string;
     // Sub-account (tenant) info to enrich notifications
     tenantName?: string;
-    subdomain?: string;
+    tenantSubdomain?: string;
     createdBy: string;
 }
 
@@ -161,8 +163,10 @@ export interface UserDeletedPayload extends EventPayload {
 export interface UserPasswordResetPayload extends EventPayload {
     userId: string;
     email: string;
+    name?: string;
     resetBy: string;
     tenantId?: string;
+    tenantSubdomain?: string;
     resetMethod: 'admin' | 'self' | 'forgot_password';
 }
 

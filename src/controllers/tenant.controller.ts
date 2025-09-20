@@ -3,6 +3,7 @@ import { Controller } from "./controller";
 import { responseResult } from "../utils/response";
 import { errorResponse } from "../utils/errorResponse";
 import TenantService from "../services/tenant.service";
+import UserService from "../services/user.service";
 import { ITenant } from "../models/tenant.model";
 
 import Logging from "../libraries/logging.library";
@@ -33,10 +34,13 @@ import { rateLimitConfig } from "../config";
 
 class TenantController extends Controller{
     private tenantService: TenantService;
+    private userService: UserService;
+    
     constructor() {
         super()
         this.initializeRoutes();
         this.tenantService = TenantService.getInstance();
+        this.userService = UserService.getInstance();
     }
 
     private initializeRoutes() {
@@ -207,14 +211,32 @@ class TenantController extends Controller{
                 );
             }
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
-            // Emit comprehensive tenant creation events
+            
+            // Get owner information for enhanced email notifications
+            let ownerInfo = null;
+            try {
+                // Get owner details from the main database (landlord context)
+                const owner = await this.userService.findById(userId!);
+                if (owner) {
+                    ownerInfo = {
+                        ownerEmail: owner.email,
+                        ownerName: owner.name
+                    };
+                }
+            } catch (error) {
+                Logging.warn('Could not fetch owner info for tenant creation email', error);
+            }
+            
+            // Emit comprehensive tenant creation events with owner info
             EventService.emitTenantCreated({
                 tenantId: createdTenant._id as string,
                 name: createdTenant.name,
                 subdomain: createdTenant.subdomain,
                 databaseName: createdTenant.databaseName,
                 databaseUser: createdTenant.databaseUser,
-                createdBy: userId!
+                createdBy: userId!,
+                ownerEmail: ownerInfo?.ownerEmail,
+                ownerName: ownerInfo?.ownerName
             }, EventService.createContextFromRequest(req));
 
             // Emit audit trail

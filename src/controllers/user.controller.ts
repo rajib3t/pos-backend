@@ -31,21 +31,24 @@ import CacheMiddleware from '../middlewares/cache.middleware';
 import CacheService from '../services/cache.service';
 import EventEmissionMiddleware from '../middlewares/eventEmission.middleware';
 import EventService from '../events/EventService';
+import { UserCreatedPayload } from '../events/types/EventPayloads';
 import { rateLimitConfig } from '../config';
 import { DateUtils } from '../utils/dateUtils';
 import DataSanitizer from '../utils/sanitizeData';
 import { hashPassword } from '../utils/passwords';
 import addressRepository from '../repositories/address.repository';
-import { log } from 'console';
-import { IAddress } from '@/models/address.model';
-import { th } from 'zod/locales';
 
+import { IAddress } from '../models/address.model';
+
+import { SubdomainExtractor, DomainUtils } from '../utils/domain';
+import TenantService from '../services/tenant.service';
 class UserController extends Controller {
     private userService: UserService;
-
+    private tenantService: TenantService;
     constructor() {
         super();
         this.userService = UserService.getInstance();
+        this.tenantService = TenantService.getInstance();
         this.initializeRoutes();
     }
 
@@ -331,11 +334,14 @@ class UserController extends Controller {
     /**
      * Get context info for logging
      */
-    private getContextInfo(req: Request): string {
+    private getContextInfo(req: Request): { tenantId: string; subdomain: string } | string {
         if (req.isLandlord) {
             return 'landlord (main database)';
         }
-        return `tenant ${req.tenant?.subdomain}`;
+        return {
+            tenantId: req.tenant?._id as string,
+            subdomain: req.tenant?.subdomain as string
+        }
     }
 
     /**
@@ -345,13 +351,19 @@ class UserController extends Controller {
         
         const userData = req.body;
        
-
+        
 
 
         try {
 
-           
+            this.validateTenantContext(req);
+            let tenant;
+            if(!req.isLandlord){
+             tenant = await this.tenantService.getTenantBySubdomain(req.tenant?.subdomain as string);
+            }
+            
 
+           
             // create a connection to the tenant's database
             const existingUser = await this.userService.findByEmail(req.tenantConnection!,userData.email);
             if (existingUser) {
@@ -371,21 +383,29 @@ class UserController extends Controller {
                 
             }
 
-            // Emit user created event with comprehensive data
-            EventService.emitUserCreated({
+            // Emit user created event with comprehensive data including tenant info
+            const userCreatedEventPayload: UserCreatedPayload = {
                 userId: user._id as string,
                 email: user.email,
                 name: user.name,
                 mobile: user.mobile,
                 role: user.role,
-                
-                createdBy: 'admin' // or req.userId if available
-            }, EventService.createContextFromRequest(req));
+                createdBy: req.userId || 'admin' // Use actual user ID if available
+            };
+
+            if (!req.isLandlord) {
+                userCreatedEventPayload.tenantId = tenant?._id as string;
+                userCreatedEventPayload.tenantName = tenant?.name;
+                userCreatedEventPayload.tenantSubdomain = tenant?.subdomain;
+            }
+            
+            EventService.emitUserCreated(userCreatedEventPayload, EventService.createContextFromRequest(req));
 
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
             
 
+// ...
               return responseResult.sendResponse({  
                 res,
                 data: sanitizedUser,
@@ -466,7 +486,8 @@ class UserController extends Controller {
         
         try {
             this.validateTenantContext(req);
-
+            
+            
             // Build filter object based on query parameters
             const filter: any = {};
             
@@ -1396,7 +1417,10 @@ class UserController extends Controller {
            
              this.validateTenantContext(req);
             // Create a connection to the tenant's database
-          
+            let tenant;
+            if(!req.isLandlord){
+                tenant = await this.tenantService.getTenantBySubdomain(req.tenant?.subdomain as string);
+               }
             
             // Get user data for event emission
             const userForReset = await this.userService.findById(req.tenantConnection!, userId);
@@ -1410,20 +1434,23 @@ class UserController extends Controller {
                 throw new UpdateFailedError(
                     "Failed to update password", 
                     "user", 
-                    userId, 
+                    userForReset?._id as string, 
                     "User not found or no changes made", 
                     ["password"]
                 );
             }
 
             // Emit password reset event
-            EventService.emitUserPasswordReset({
-                userId: userId,
-                email: userForReset.email,
-                resetBy: 'admin', // or req.userId if available
-                tenantId: req.isLandlord ? 'landlord' : req.tenant?._id as string,
-                resetMethod: 'admin'
-            }, EventService.createContextFromRequest(req));
+           EventService.emitUserPasswordReset({
+                        name:userForReset.name,
+                           userId: userForReset?._id as string,
+                           email: userForReset.email,
+                           resetBy: 'admin' ,// Use actual user ID if available
+                           tenantId: tenant?._id as string,
+                           resetMethod: 'admin',
+                           subdomain: tenant?.subdomain as string,
+                       }, EventService.createContextFromRequest(req));
+           
 
             // Sanitize the user data to remove sensitive fields
             const sanitizedUser = DataSanitizer.sanitizeData<IUser>(updatedUser, ['password']);

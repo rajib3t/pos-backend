@@ -58,6 +58,7 @@ class TenantUserController extends Controller{
             if (tenant) {
                 req.tenant = tenant;
                 req.subdomain = tenant.subdomain;
+                
             }
         }
     }
@@ -506,7 +507,15 @@ class TenantUserController extends Controller{
                 
             }
 
-            // Emit user created event with comprehensive data
+            // Debug logging to see what tenant info we have
+            Logging.info('TenantUserController creating user with tenant info:', {
+                tenantId: tenantId,
+                tenantName: tenant.name,
+                tenantSubdomain: tenant.subdomain,
+                userEmail: user.email
+            });
+
+            // Emit user created event with comprehensive data including tenant info
             EventService.emitUserCreated({
                 userId: user._id as string,
                 email: user.email,
@@ -514,7 +523,9 @@ class TenantUserController extends Controller{
                 mobile: user.mobile,
                 role: user.role,
                 tenantId: tenantId as string,
-                createdBy: 'admin' // or req.userId if available
+                tenantName: tenant.name,
+                tenantSubdomain: tenant.subdomain,
+                createdBy: req.userId || 'admin' // Use actual user ID if available
             }, EventService.createContextFromRequest(req));
 
             // Sanitize the user data to remove sensitive fields

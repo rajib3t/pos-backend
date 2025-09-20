@@ -17,7 +17,7 @@ import {
 } from './types/EventPayloads';
 import Logging from '../libraries/logging.library';
 import MailService from '../services/mail.service';
-import { notificationConfig } from '../config';
+import { notificationConfig, cookieConfig } from '../config';
 
 export class EventManager {
     private static instance: EventManager;
@@ -125,14 +125,41 @@ export class EventManager {
                     createdBy: event.payload.createdBy
                 });
 
-                // Send welcome email
+                // Get tenant information for enhanced email
+                let tenantInfo = null;
+                if (event.payload.tenantId) {
+                    try {
+                        // You might need to inject a tenant service here
+                        // For now, we'll use the tenantId to construct subdomain-based login
+                        tenantInfo = {
+                            name: event.payload.tenantName || 'Your Organization',
+                            subdomain: event.payload.tenantSubdomain
+                        };
+                        
+                        // Debug logging to see what we're getting from the event
+                        Logging.info('EventManager user creation event:', {
+                            tenantId: event.payload.tenantId,
+                            tenantName: event.payload.tenantName,
+                            tenantSubdomain: event.payload.tenantSubdomain,
+                            email: event.payload.email
+                        });
+                    } catch (error) {
+                        Logging.warn('Could not fetch tenant info for user creation email', error);
+                    }
+                }
+
+                // Send enhanced welcome email with login link
                 this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
                     to: event.payload.email,
-                    subject: 'Welcome! Your account has been created',
+                    subject: `Welcome to ${tenantInfo?.name || 'the Platform'}! Your account is ready`,
                     template: 'user_created',
                     templateData: {
                         name: event.payload.name,
-                        email: event.payload.email
+                        email: event.payload.email,
+                        role: event.payload.role,
+                        tenantName: tenantInfo?.name || 'the Platform',
+                        subdomain: tenantInfo?.subdomain
+                        // Let MailService construct the proper tenant-aware URL
                     }
                 }, event.context);
 
@@ -146,7 +173,9 @@ export class EventManager {
                     metadata: {
                         email: event.payload.email,
                         name: event.payload.name,
-                        role: event.payload.role
+                        role: event.payload.role,
+                        tenantName: tenantInfo?.name,
+                        subdomain: tenantInfo?.subdomain
                     }
                 } as AuditActionPayload, event.context);
             }
@@ -210,14 +239,24 @@ export class EventManager {
                     resetMethod: event.payload.resetMethod
                 });
 
-                // Send notification email
+                // Get tenant information for login URL
+                const baseDomain = cookieConfig.baseDomain || 'localhost:3000';
+                const protocol = baseDomain.includes('://') ? '' : 'http://';
+                let loginUrl = `${protocol}${baseDomain}`;
+                if (event.payload.tenantSubdomain) {
+                    loginUrl = `${protocol}${event.payload.tenantSubdomain}.${baseDomain}`;
+                }
+
+                // Send enhanced notification email with login link
                 this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
                     to: event.payload.email,
-                    subject: 'Password Reset Notification',
+                    subject: 'Password Reset Notification - Login with New Password',
                     template: 'password_reset',
                     templateData: {
+                        name: event.payload.name || 'User',
                         resetMethod: event.payload.resetMethod,
-                        resetBy: event.payload.resetBy
+                        resetBy: event.payload.resetBy,
+                        loginUrl: `${loginUrl}/login`
                     }
                 }, event.context);
 
@@ -230,7 +269,8 @@ export class EventManager {
                     tenantId: event.payload.tenantId,
                     metadata: {
                         resetBy: event.payload.resetBy,
-                        resetMethod: event.payload.resetMethod
+                        resetMethod: event.payload.resetMethod,
+                        loginUrl: `${loginUrl}/login`
                     }
                 }, event.context);
             }
@@ -252,14 +292,31 @@ export class EventManager {
                 // Send notification to admin
                 this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
                     to: notificationConfig.adminEmail,
-                    subject: 'New Tenant Created',
+                    subject: 'New Tenant Created - Admin Notification',
                     template: 'tenant_created',
                     templateData: {
                         tenantName: event.payload.name,
                         subdomain: event.payload.subdomain,
-                        createdBy: event.payload.createdBy
+                        createdBy: event.payload.createdBy,
+                        ownerName: 'Admin',
+                        ownerEmail: notificationConfig.adminEmail
                     }
                 }, event.context);
+
+                // Send welcome email to tenant owner if we have their information
+                if (event.payload.ownerEmail) {
+                    this.eventEmitter.emitEvent(EVENTS.NOTIFICATION.EMAIL_SEND, {
+                        to: event.payload.ownerEmail,
+                        subject: `🎉 Welcome! Your organization "${event.payload.name}" is ready`,
+                        template: 'tenant_created',
+                        templateData: {
+                            tenantName: event.payload.name,
+                            subdomain: event.payload.subdomain,
+                            ownerName: event.payload.ownerName || 'Admin',
+                            ownerEmail: event.payload.ownerEmail
+                        }
+                    }, event.context);
+                }
 
                 // Create audit log
                 this.eventEmitter.emitEvent(EVENTS.AUDIT.ACTION_PERFORMED, {
@@ -270,7 +327,9 @@ export class EventManager {
                     metadata: {
                         tenantName: event.payload.name,
                         subdomain: event.payload.subdomain,
-                        databaseName: event.payload.databaseName
+                        databaseName: event.payload.databaseName,
+                        ownerEmail: event.payload.ownerEmail,
+                        ownerName: event.payload.ownerName
                     }
                 } as AuditActionPayload, event.context);
             }
