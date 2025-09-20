@@ -9,6 +9,7 @@ const createUserSchema = z.object({
         email: z.string().trim().pipe(z.email("Invalid email format")),
         mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(15, "Mobile number is too long").optional(),
         password: z.string().min(6, "Password must be at least 6 characters").max(100, "Password is too long"),
+        role: z.enum(['admin', 'staff', 'manager'])
     })
 });
 
@@ -18,6 +19,7 @@ const updateUserSchema = z.object({
         name: z.string().min(1, "Name is required").max(100, "Name is too long").optional(),
         email: z.string().trim().pipe(z.email("Invalid email format")).optional(),
         mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(15, "Mobile number is too long").optional(),
+
     }),
     params: z.object({
         id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
@@ -128,7 +130,7 @@ const createUserForTenantSchema = z.object({
         email: z.string().trim().pipe(z.email()),
         mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(10, "Mobile number must be exactly 10 digits"),
         password: z.string().min(6, "Password must be at least 8 characters").max(100, "Password is too long"),
-        role: z.enum(['admin', 'user', 'manager'])
+        role: z.enum(['admin', 'staff', 'manager'])
 
     }),
     params: z.object({
