@@ -49,6 +49,19 @@ class TenantUserController extends Controller{
         this.userService = UserService.getInstance();
     }
 
+    /**
+     * Resolve tenant context and set it in request for consistent cache keys
+     */
+    private async resolveTenantContext(req: Request, tenantId: string): Promise<void> {
+        if (!req.tenant) {
+            const tenant = await this.tenantService.findById(tenantId);
+            if (tenant) {
+                req.tenant = tenant;
+                req.subdomain = tenant.subdomain;
+            }
+        }
+    }
+
     // Cache admin handlers
     private async clearCache(req: Request, res: Response, next: NextFunction) {
         try {
@@ -114,8 +127,11 @@ class TenantUserController extends Controller{
                 prefix: 'users',
                 keyGenerator: (req) => {
                     const { tenantId } = req.params as any;
+                    // Get tenant subdomain for consistent cache keys
+                    const tenant = req.tenant || { subdomain: tenantId };
+                    const context = tenant.subdomain || tenantId;
                     const queryStr = JSON.stringify(req.query || {});
-                    return `list:${tenantId}:${Buffer.from(queryStr).toString('base64')}`;
+                    return `list:${context}:${Buffer.from(queryStr).toString('base64')}`;
                 },
                 condition: (req) => {
                     const email = req.query?.email?.toString();
@@ -138,11 +154,21 @@ class TenantUserController extends Controller{
                 maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:users:create:${req.ip}`
             }),
-            CacheMiddleware.invalidate((req) => [
-                `users:list:${req.params.tenantId}:*`,
-                `users:stats:${req.params.tenantId}:*`,
-                `tenant:${req.params.tenantId}:summary`
-            ]),
+            CacheMiddleware.invalidate((req) => {
+                const { tenantId } = req.params;
+                // Get tenant subdomain for consistent cache invalidation
+                const tenant = req.tenant || { subdomain: tenantId };
+                const context = tenant.subdomain || tenantId;
+                return [
+                    // Invalidate with subdomain context (for tenant access)
+                    `users:list:${context}:*`,
+                    `users:stats:${context}:*`,
+                    // Also invalidate with tenantId context (for landlord access)
+                    `users:list:${tenantId}:*`,
+                    `users:stats:${tenantId}:*`,
+                    `tenant:${tenantId}:summary`
+                ];
+            }),
             EventEmissionMiddleware.forCreate('user'),
             this.asyncHandler(this.create.bind(this))
         );
@@ -155,7 +181,13 @@ class TenantUserController extends Controller{
             CacheMiddleware.cache({
                 ttl: 600,
                 prefix: 'user',
-                keyGenerator: (req) => `detail:${req.params.tenantId}:${req.params.userId}`,
+                keyGenerator: (req) => {
+                    const { tenantId, userId } = req.params;
+                    // Get tenant subdomain for consistent cache keys
+                    const tenant = req.tenant || { subdomain: tenantId };
+                    const context = tenant.subdomain || tenantId;
+                    return `detail:${context}:${userId}`;
+                },
             }),
             EventEmissionMiddleware.forRead('user'),
             this.asyncHandler(this.getUser.bind(this))
@@ -170,11 +202,22 @@ class TenantUserController extends Controller{
                 maxRequests: rateLimitConfig.patch,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:user:${req.params.userId}:update:${req.ip}`
             }),
-            CacheMiddleware.invalidate((req) => [
-                `user:detail:${req.params.tenantId}:${req.params.userId}`,
-                `users:list:${req.params.tenantId}:*`,
-                `users:stats:${req.params.tenantId}:*`
-            ]),
+            CacheMiddleware.invalidate((req) => {
+                const { tenantId, userId } = req.params;
+                // Get tenant subdomain for consistent cache invalidation
+                const tenant = req.tenant || { subdomain: tenantId };
+                const context = tenant.subdomain || tenantId;
+                return [
+                    // Invalidate with subdomain context (for tenant access)
+                    `user:detail:${context}:${userId}`,
+                    `users:list:${context}:*`,
+                    `users:stats:${context}:*`,
+                    // Also invalidate with tenantId context (for landlord access)
+                    `user:detail:${tenantId}:${userId}`,
+                    `users:list:${tenantId}:*`,
+                    `users:stats:${tenantId}:*`
+                ];
+            }),
             EventEmissionMiddleware.forUpdate('user'),
             this.asyncHandler(this.update.bind(this))
         );
@@ -188,12 +231,23 @@ class TenantUserController extends Controller{
                 maxRequests: rateLimitConfig.delete,
                 keyGenerator: (req) => `tenant:${req.params.tenantId}:users:delete:${req.ip}`
             }),
-            CacheMiddleware.invalidate((req) => [
-                `user:detail:${req.params.tenantId}:${req.params.userId}`,
-                `users:list:${req.params.tenantId}:*`,
-                `users:stats:${req.params.tenantId}:*`,
-                `tenant:${req.params.tenantId}:summary`
-            ]),
+            CacheMiddleware.invalidate((req) => {
+                const { tenantId, userId } = req.params;
+                // Get tenant subdomain for consistent cache invalidation
+                const tenant = req.tenant || { subdomain: tenantId };
+                const context = tenant.subdomain || tenantId;
+                return [
+                    // Invalidate with subdomain context (for tenant access)
+                    `user:detail:${context}:${userId}`,
+                    `users:list:${context}:*`,
+                    `users:stats:${context}:*`,
+                    // Also invalidate with tenantId context (for landlord access)
+                    `user:detail:${tenantId}:${userId}`,
+                    `users:list:${tenantId}:*`,
+                    `users:stats:${tenantId}:*`,
+                    `tenant:${tenantId}:summary`
+                ];
+            }),
             EventEmissionMiddleware.forDelete('user'),
             this.asyncHandler(this.delete.bind(this))
         );
@@ -240,6 +294,8 @@ class TenantUserController extends Controller{
         }
 
         try {
+            // Resolve tenant context for consistent cache keys
+            await this.resolveTenantContext(req, tenantId);
 
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
@@ -421,9 +477,9 @@ class TenantUserController extends Controller{
 
         }
 
-
-
         try {
+            // Resolve tenant context for consistent cache keys
+            await this.resolveTenantContext(req, tenantId);
 
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
@@ -551,6 +607,9 @@ class TenantUserController extends Controller{
         }
 
     try {
+        // Resolve tenant context for consistent cache keys
+        await this.resolveTenantContext(req, tenantId);
+        
         const tenant = await this.tenantService.findById(tenantId);
         if (!tenant) {
              throw new NotFoundError("User not found", "tenant", tenantId);
@@ -649,6 +708,9 @@ class TenantUserController extends Controller{
         }
 
         try {
+            // Resolve tenant context for consistent cache keys
+            await this.resolveTenantContext(req, tenantId);
+            
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
                 return errorResponse.sendError({
@@ -869,6 +931,9 @@ class TenantUserController extends Controller{
         }
 
         try {
+            // Resolve tenant context for consistent cache keys
+            await this.resolveTenantContext(req, tenantId);
+            
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
                 return errorResponse.sendError({
@@ -997,6 +1062,9 @@ class TenantUserController extends Controller{
         }
 
         try {
+            // Resolve tenant context for consistent cache keys
+            await this.resolveTenantContext(req, tenantId);
+            
             const tenant = await this.tenantService.findById(tenantId);
             if (!tenant) {
                 return errorResponse.sendError({
