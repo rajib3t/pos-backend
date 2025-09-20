@@ -60,10 +60,24 @@ class UserController extends Controller {
                 maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => `user:create:${req.ip}:${req.isLandlord ? 'landlord' : req.tenant?.subdomain}`
             }),
-            CacheMiddleware.invalidate((req) => [
-                `users:list:${req.isLandlord ? 'landlord' : req.tenant?.subdomain}:*`,
-                `users:stats:${req.isLandlord ? 'landlord' : req.tenant?.subdomain}:*`
-            ]),
+            CacheMiddleware.invalidate((req) => {
+                const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
+                const patterns = [
+                    `users:list:${context}:*`,
+                    `users:stats:${context}:*`
+                ];
+                
+                // If tenant operation, also invalidate landlord cache keys that use tenantId
+                if (!req.isLandlord && req.tenant?._id) {
+                    patterns.push(
+                        `users:list:${req.tenant._id}:*`,
+                        `users:stats:${req.tenant._id}:*`,
+                        `tenant:${req.tenant._id}:summary`
+                    );
+                }
+                
+                return patterns;
+            }),
             EventEmissionMiddleware.forCreate('user'),
             this.asyncHandler(this.createUser.bind(this)),
         );
@@ -123,11 +137,22 @@ class UserController extends Controller {
             }),
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
-                return [
+                const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
                     `users:stats:${context}:*`
                 ];
+                
+                // If tenant operation, also invalidate landlord cache keys that use tenantId
+                if (!req.isLandlord && req.tenant?._id) {
+                    patterns.push(
+                        `user:detail:${req.tenant._id}:${req.params.id}`,
+                        `users:list:${req.tenant._id}:*`,
+                        `users:stats:${req.tenant._id}:*`
+                    );
+                }
+                
+                return patterns;
             }),
             EventEmissionMiddleware.forUpdate('user'),
             this.asyncHandler(this.updateUser)
@@ -146,11 +171,23 @@ class UserController extends Controller {
             }),
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
-                return [
+                const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
                     `users:stats:${context}:*`
                 ];
+                
+                // If tenant operation, also invalidate landlord cache keys that use tenantId
+                if (!req.isLandlord && req.tenant?._id) {
+                    patterns.push(
+                        `user:detail:${req.tenant._id}:${req.params.id}`,
+                        `users:list:${req.tenant._id}:*`,
+                        `users:stats:${req.tenant._id}:*`,
+                        `tenant:${req.tenant._id}:summary`
+                    );
+                }
+                
+                return patterns;
             }),
             EventEmissionMiddleware.forDelete('user'),
             this.asyncHandler(this.deleteUser)
@@ -169,11 +206,22 @@ class UserController extends Controller {
             }),
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
-                return [
+                const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
                     `users:stats:${context}:*`
                 ];
+                
+                // If tenant operation, also invalidate landlord cache keys that use tenantId
+                if (!req.isLandlord && req.tenant?._id) {
+                    patterns.push(
+                        `user:detail:${req.tenant._id}:${req.params.id}`,
+                        `users:list:${req.tenant._id}:*`,
+                        `users:stats:${req.tenant._id}:*`
+                    );
+                }
+                
+                return patterns;
             }),
             EventEmissionMiddleware.createEventMiddleware({
                 resource: 'user',
