@@ -127,7 +127,7 @@ class App {
                 Logging.info('All tenant connections closed');
                 
                 // Close main database connection
-                // Note: mongoose.connection.close() is handled automatically
+                // Main database connection is closed automatically by mongoose
                 
                 // Close Redis connection
                 await this.redisService.disconnect();

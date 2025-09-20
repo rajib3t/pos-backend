@@ -151,8 +151,7 @@ class TokenService {
             throw new Error('Invalid refresh token');
         }
         } catch (error) {
-            console.log(error);
-
+            Logging.error('Error refreshing token:', error);
             throw new Error('Error refreshing token');
         }
         
@@ -173,8 +172,7 @@ class TokenService {
             const newToken = await this.generateToken(tokenPayload);
             return { token: newToken, };
         } catch (error) {
-            console.log(error);
-
+            Logging.error('Invalid token error:', error);
             throw new Error('Invalid token');
         }
     }

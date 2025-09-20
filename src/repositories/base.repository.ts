@@ -127,8 +127,8 @@ class BaseRepository< TEntity = any, TCreate = any, TUpdate = any> extends Repos
             itemsQuery = this.applyPopulate(itemsQuery, populate);
 
             const [items, total] = await Promise.all([
-               await itemsQuery.lean().exec(),
-               await this.model.countDocuments(filter as any).exec()
+               itemsQuery.lean().exec(),
+               this.model.countDocuments(filter as any).exec()
             ]);
 
             return {

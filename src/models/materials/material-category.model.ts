@@ -9,8 +9,8 @@ export interface IMaterialCategory extends Document{
 
 const MaterialCategorySchema : Schema = new Schema(
     {
-        name: { type: String, require:true},
-        code: { type: String, require:true, unique:true },
+        name: { type: String, required: true},
+        code: { type: String, required: true, unique: true },
         createdBy: { type: Schema.Types.ObjectId, ref: "User" , required: true},
     },
     {

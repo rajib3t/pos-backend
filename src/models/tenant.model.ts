@@ -29,5 +29,10 @@ const TenantSchema :Schema = new Schema(
     }
 );
 
+// Additional indexes for better query performance
+TenantSchema.index({ name: 1 }); // Index for tenant name queries
+TenantSchema.index({ createdBy: 1 }); // Index for queries by creator
+TenantSchema.index({ createdAt: -1 }); // Index for sorting by creation date
+TenantSchema.index({ subdomain: 1, name: 1 }); // Compound index for subdomain + name queries
 
 export default model<ITenant>("Tenant", TenantSchema);

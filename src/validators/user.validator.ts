@@ -1,7 +1,44 @@
 import { z } from "zod";
 import UserService from "../services/user.service";
-import { create } from "domain";
-import { fi } from "zod/v4/locales";
+import Logging from "../libraries/logging.library";
+
+// Basic user creation schema for user controller
+const createUserSchema = z.object({
+    body: z.object({
+        name: z.string().min(1, "Name is required").max(100, "Name is too long"),
+        email: z.string().trim().pipe(z.email("Invalid email format")),
+        mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(15, "Mobile number is too long").optional(),
+        password: z.string().min(6, "Password must be at least 6 characters").max(100, "Password is too long"),
+    })
+});
+
+// User update schema
+const updateUserSchema = z.object({
+    body: z.object({
+        name: z.string().min(1, "Name is required").max(100, "Name is too long").optional(),
+        email: z.string().trim().pipe(z.email("Invalid email format")).optional(),
+        mobile: z.string().min(10, "Mobile number must be at least 10 digits").max(15, "Mobile number is too long").optional(),
+    }),
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+// Get user by ID schema
+const getUserSchema = z.object({
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+// Delete user schema
+const deleteUserSchema = z.object({
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+    })
+});
+
+// Profile update schema for profile controller
 const profileUpdateSchema = z.object({
     body: z.object({
         name: z.string().min(1, "Name is required").max(100, "Name is too long").optional(),
@@ -11,9 +48,7 @@ const profileUpdateSchema = z.object({
         city: z.string().max(100, "City is too long").optional(),
         country: z.string().max(100, "Country is too long").optional(),
         postalCode: z.string().min(6, "Postal code must be at least 6 characters").max(6, "Postal code is too long").optional(),
-    }),
-   
-
+    })
 });
 
 // Helper function to validate email uniqueness (to be used in controller after schema validation)
@@ -46,7 +81,7 @@ const validateEmailUniqueness = async (
 
         return { isValid: true };
     } catch (error) {
-        console.error('Email uniqueness validation error:', error);
+        Logging.error('Email uniqueness validation error:', error);
         return { isValid: false, message: "Failed to validate email uniqueness" };
     }
 }
@@ -81,8 +116,8 @@ const validateMobileUniqueness = async (
 
         return { isValid: true };
     } catch (error) {
-        console.error('Email uniqueness validation error:', error);
-        return { isValid: false, message: "Failed to validate email uniqueness" };
+        Logging.error('Mobile uniqueness validation error:', error);
+        return { isValid: false, message: "Failed to validate mobile uniqueness" };
     }
 }
 
@@ -162,6 +197,10 @@ const changeUserPasswordForTenantSchema = z.object({
 });
 
 export { 
+    createUserSchema,
+    updateUserSchema,
+    getUserSchema,
+    deleteUserSchema,
     profileUpdateSchema, 
     validateEmailUniqueness, 
     validateMobileUniqueness, 

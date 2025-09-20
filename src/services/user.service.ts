@@ -60,7 +60,7 @@ class UserService {
                 throw error;
             }
         } else {
-            this.database.connect();
+            await this.database.connect();
             // Original version (main database) - for landlord requests
             return this.userRepository.create(connectionOrData);
         }
@@ -205,7 +205,7 @@ public async findById(connectionOrId: string | Connection, idOrOptions?: string 
             // Use original repository for main database
             try {
                 const skip = (page - 1) * limit;
-                // Note: You'll need to add findAll method to UserRepository or use the model directly
+                // Using TenantModelFactory to get the appropriate User model for this tenant
                 const UserModel = TenantModelFactory.getUserModel(connection);
                 
                 const [data, total] = await Promise.all([
@@ -320,6 +320,7 @@ public async findById(connectionOrId: string | Connection, idOrOptions?: string 
             return tenantUserRepository.findPaginated(optionsArg || {});
         } else {
             // Using main database (backward compatibility)
+            Logging.info(`Using main database for getUsersWithPagination`);
             return this.userRepository.findPaginated(connectionOrOptions)
         }
 

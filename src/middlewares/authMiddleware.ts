@@ -3,6 +3,7 @@ import TokenService from "../services/token.service";
 import { errorResponse } from "../utils/errorResponse";
 import jwt from 'jsonwebtoken';
 import { responseResult } from "../utils/response";
+import Logging from "../libraries/logging.library";
 // Extend Express Request interface to include userId and userType
 declare module 'express-serve-static-core' {
   interface Request {
@@ -17,7 +18,7 @@ class AuthMiddleware {
     private tokenService: TokenService;
     constructor() {
         this.tokenService = TokenService.getInstance();
-        console.log("AuthMiddleware initialized with TokenService instance");
+        Logging.info("AuthMiddleware initialized with TokenService instance");
         this.handle = this.handle.bind(this);
     }
     public static getInstance(): AuthMiddleware {
