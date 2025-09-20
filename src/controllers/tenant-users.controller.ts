@@ -162,7 +162,7 @@ class TenantUserController extends Controller{
         );
 
         // Update user with rate limit and cache invalidation
-        this.router.patch(
+        this.router.put(
             '/:tenantId/users/:userId',
             ValidateMiddleware.getInstance().validate(updateUserForTenantSchema.partial({ body: true })),
             CacheMiddleware.rateLimit({

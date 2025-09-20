@@ -37,6 +37,8 @@ import DataSanitizer from '../utils/sanitizeData';
 import { hashPassword } from '../utils/passwords';
 import addressRepository from '../repositories/address.repository';
 import { log } from 'console';
+import { IAddress } from '@/models/address.model';
+import { th } from 'zod/locales';
 
 class UserController extends Controller {
     private userService: UserService;
@@ -249,6 +251,23 @@ class UserController extends Controller {
                 skipCrud: true
             }),
             this.asyncHandler(this.getCacheStats)
+        );
+
+        this.router.patch("/:id/reset-password",
+            CacheMiddleware.rateLimit({
+                windowMs: 15 * 60 * 1000,
+                maxRequests: rateLimitConfig.patch,
+                keyGenerator: (req) => {
+                    const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
+                    return `user:reset-password:${req.ip}:${context}`;
+                }
+            }),
+            EventEmissionMiddleware.createEventMiddleware({
+                resource: 'user',
+                operation: 'update',
+                customEventName: 'user.password.reset'
+            }),
+            this.asyncHandler(this.passwordReset.bind(this))
         );
     }
 
@@ -656,15 +675,41 @@ class UserController extends Controller {
     /**
      * Update user (landlord or tenant)
      */
-    private updateUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    private updateUser = async (req: Request, res: Response, next: NextFunction) => {
+        const userId = req.params.id;
+        const updateData = req.body;
+         if (!userId) {
+             throw new ValidationError("User ID and Tenant ID are required", [
+                !userId ? "userId: User ID is required" : "",
+               
+            ].filter(Boolean));
+        }
         try {
             this.validateTenantContext(req);
             
             const { id } = req.params;
             const updateData = req.body;
+            // Check for email uniqueness (exclude current user)
+            if (updateData.email) {
+                const existingUser = await this.userService.findByEmail(req.tenantConnection!, updateData.email);
+                
+                if (existingUser && String(existingUser._id) !== userId) {
 
-            // Remove password from update data (should be handled separately)
-            delete updateData.password;
+                    throw new ConflictError("Email is already in use", "email", updateData.email);
+                }
+            }
+             // Check for mobile uniqueness (exclude current user)
+            if (updateData.mobile) {
+                const existingUserByMobile = await this.userService.findByMobile(req.tenantConnection!, updateData.mobile);
+               
+                if (existingUserByMobile && String(existingUserByMobile._id) !== userId) {
+
+                    throw new ConflictError("Mobile number is already in use", "mobile", updateData.mobile);
+                }
+            }
+            
+
+            
 
             let user: IUser | null;
 
@@ -675,16 +720,16 @@ class UserController extends Controller {
             }
 
             if (!user) {
-                errorResponse.sendError({
-                    res,
-                    message: 'User not found',
-                    statusCode: 404
-                });
-                return;
+                throw new UpdateFailedError(
+                    "Failed to update user", 
+                    "user", 
+                    userId, 
+                    "User not found or no changes made", 
+                    ["email", "name", "mobile"]
+                );
             }
 
-            // Remove password from response
-            const userResponse = { ...user.toObject(), password: undefined };
+          
 
             // Emit user updated event
             EventService.emitUserUpdated({
@@ -701,63 +746,140 @@ class UserController extends Controller {
                 updatedBy: 'admin', // or req.userId if available
                 tenantId: req.isLandlord ? 'landlord' : req.tenant?._id as string
             }, EventService.createContextFromRequest(req));
+            const userAddress = new addressRepository(req.tenantConnection!);
+            const address = await userAddress.findByUserId(userId);
 
-            responseResult.sendResponse({
+            if (address && (updateData.address || updateData.city || updateData.state || updateData.postalCode)) {
+                                        // Update existing address and emit event
+                                        const previousAddressData = {
+                                            street: address.street,
+                                            city: address.city,
+                                            state: address.state,
+                                            zip: address.zip
+                                        };
+
+                                        await userAddress.update( address._id as string, {
+                                            street: updateData.address,
+                                            city: updateData.city,
+                                            state : updateData.state,
+                                            zip: updateData.postalCode,
+                                        });
+                                        
+                                        // Emit address updated event
+                                        EventService.emitAddressUpdated({
+                                            addressId: address._id as string,
+                                            userId: user._id as string,
+                                            previousData: previousAddressData,
+                                            newData: {
+                                                street: updateData.address,
+                                                city: updateData.city,
+                                                state: updateData.state,
+                                                zip: updateData.postalCode
+                                            },
+                                            
+                                        }, EventService.createContextFromRequest(req));
+                                    } else if (!address && (updateData.address || updateData.city || updateData.state || updateData.postalCode)) {
+                                        // Create new address
+                                        const newAddress: Partial<IAddress> = {
+                                            userId: user._id,
+                                            street: updateData.address,
+                                            city: updateData.city,
+                                            state: updateData.state,
+                                            zip: updateData.postalCode,
+                                        };
+                                        const createdAddress = await userAddress.create(newAddress);
+                                        
+                                        // Emit address created event
+                                        EventService.emitAddressCreated({
+                                            addressId: createdAddress._id as string,
+                                            userId: user._id as string,
+                                            street: updateData.address,
+                                            city: updateData.city,
+                                            state: updateData.state,
+                                            zip: updateData.postalCode,
+                                           
+                                        }, EventService.createContextFromRequest(req));
+                                    }
+            // Sanitize the user data to remove sensitive fields
+            const sanitizedUser = DataSanitizer.sanitizeData<IUser>(user, ['password']);
+            const updatedAddress = await userAddress.findByUserId(userId as string);
+            return responseResult.sendResponse({
                 res,
-                data: userResponse,
-                message: 'User updated successfully',
+                data: {...sanitizedUser, address: updatedAddress ? {
+                    street: updatedAddress.street,
+                    city: updatedAddress.city,
+                    state: updatedAddress.state,
+                    zip: updatedAddress.zip
+                } : null},
+                message: "User updated successfully",
                 statusCode: 200
             });
 
-            Logging.info(`User updated in ${this.getContextInfo(req)}: ${user.email}`);
+           
         } catch (error) {
-            if (error instanceof NotFoundError) {
-                errorResponse.sendError({
-                    res,
-                    message: error.message,
-                    statusCode: 404,
-                    details: {
-                        resource: error.resource,
-                        resourceId: error.resourceId
-                    }
-                });
-                return;
-            }
+            // Enhanced error handling for user update
+                        if (isValidationError(error)) {
+                            return errorResponse.sendError({
+                                res,
+                                message: error.message,
+                                statusCode: 400,
+                                details: error.details
+                            });
+                        }
             
-            if (isUpdateFailedError(error)) {
-                Logging.warn("User update failed:", error);
-                errorResponse.sendError({
-                    res,
-                    message: error.message,
-                    statusCode: 422,
-                    details: {
-                        resource: error.resource,
-                        resourceId: error.resourceId,
-                        reason: error.reason,
-                        failedFields: error.failedFields
-                    }
-                });
-                return;
-            }
+                        if (error instanceof ConflictError) {
+                            return errorResponse.sendError({
+                                res,
+                                message: "Validation failed",
+                                statusCode: 409,
+                                details: [`${error.conflictField}: ${error.message}`]
+                            });
+                        }
             
-            if (isDatabaseError(error)) {
-                Logging.error("Database error in user update:", error);
-                errorResponse.sendError({
-                    res,
-                    message: "Database operation failed",
-                    statusCode: 500
-                });
-                return;
-            }
+                        if (error instanceof NotFoundError) {
+                            return errorResponse.sendError({
+                                res,
+                                message: error.message,
+                                statusCode: 404,
+                                details: {
+                                    resource: error.resource,
+                                    resourceId: error.resourceId
+                                }
+                            });
+                        }
             
-            // Log unexpected errors
-            Logging.error("Unexpected error in user update:", error);
-            errorResponse.sendError({
-                res,
-                message: 'Failed to update user',
-                statusCode: 500,
-                details: process.env.NODE_ENV === 'development' ? error : undefined
-            });
+                        if (isUpdateFailedError(error)) {
+                            Logging.warn("User update failed:", error);
+                            return errorResponse.sendError({
+                                res,
+                                message: error.message,
+                                statusCode: 422,
+                                details: {
+                                    resource: error.resource,
+                                    resourceId: error.resourceId,
+                                    reason: error.reason,
+                                    failedFields: error.failedFields
+                                }
+                            });
+                        }
+            
+                        if (isDatabaseError(error)) {
+                            Logging.error("Database error in user update:", error);
+                            return errorResponse.sendError({
+                                res,
+                                message: "Database operation failed",
+                                statusCode: 500
+                            });
+                        }
+            
+                        // Log unexpected errors
+                        Logging.error("Unexpected error in user update:", error);
+                        return errorResponse.sendError({
+                            res,
+                            message: "Failed to update user",
+                            statusCode: 500,
+                            details: process.env.NODE_ENV === 'development' ? error : undefined
+                        });
         }
     };
 
@@ -1206,6 +1328,120 @@ class UserController extends Controller {
             });
         }
     };
+
+
+    private passwordReset = async (req: Request, res: Response, next: NextFunction) => {
+        
+        const userId = req.params.id;
+        const { newPassword } = req.body;
+
+        if ( !userId || !newPassword) {
+             if (!newPassword || !userId) {
+             throw new ValidationError("User ID and New Password are required", [
+                !userId ? "userId: User ID is required" : "",
+                !newPassword ? "newPassword: New Password is required" : ""
+            ].filter(Boolean));
+        }
+        }
+
+        try {
+           
+             this.validateTenantContext(req);
+            // Create a connection to the tenant's database
+          
+            
+            // Get user data for event emission
+            const userForReset = await this.userService.findById(req.tenantConnection!, userId);
+            if (!userForReset) {
+                throw new NotFoundError("User not found", "user", userId);
+            }
+            
+            const hashedPassword = await hashPassword(newPassword);
+            const updatedUser = await this.userService.update(req.tenantConnection!, userId, { password: hashedPassword });
+            if (!updatedUser) {
+                throw new UpdateFailedError(
+                    "Failed to update password", 
+                    "user", 
+                    userId, 
+                    "User not found or no changes made", 
+                    ["password"]
+                );
+            }
+
+            // Emit password reset event
+            EventService.emitUserPasswordReset({
+                userId: userId,
+                email: userForReset.email,
+                resetBy: 'admin', // or req.userId if available
+                tenantId: req.isLandlord ? 'landlord' : req.tenant?._id as string,
+                resetMethod: 'admin'
+            }, EventService.createContextFromRequest(req));
+
+            // Sanitize the user data to remove sensitive fields
+            const sanitizedUser = DataSanitizer.sanitizeData<IUser>(updatedUser, ['password']);
+            return responseResult.sendResponse({
+                res,
+                data: sanitizedUser,
+                message: "Password updated successfully",
+                statusCode: 200
+            });
+        } catch (error) {
+            // Enhanced error handling for password reset
+            if (isValidationError(error)) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 400,
+                    details: error.details
+                });
+            }
+
+            if (error instanceof NotFoundError) {
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+            }
+
+            if (isUpdateFailedError(error)) {
+                Logging.warn("Password reset failed:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        failedFields: error.failedFields
+                    }
+                });
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in password reset:", error);
+                return errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in password reset:", error);
+            return errorResponse.sendError({
+                res,
+                message: "Failed to update password",
+                statusCode: 500,
+                details: process.env.NODE_ENV === 'development' ? error : undefined
+            });
+        }
+    }
 }
 
 export default new UserController().router;
