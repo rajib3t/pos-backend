@@ -8,7 +8,7 @@ export interface IUser extends Document {
   mobile?: string;
   password?: string;
   status?: boolean;
-  role?: 'admin' | 'staff' | 'manager';
+  role?: 'admin' | 'staff' | 'manager' | 'owner';
   addresses?: any[]; // This will hold the populated addresses
 
 }
@@ -16,10 +16,10 @@ const UserSchema: Schema = new Schema(
     {
       name: { type: String, required: true },
       email: { type: String, required: true, unique: true },
-      mobile: { type: String, required: false },
+      mobile: { type: String, required: false , unique: true, sparse: true },
       status: { type: Boolean, default: true },
       password: { type: String, required: true },
-      role: { type: String, enum: ['admin', 'staff', 'manager'], default: 'staff' }
+      role: { type: String, enum: ['admin', 'staff', 'manager', 'owner'], default: 'staff' }
       
     },
     {

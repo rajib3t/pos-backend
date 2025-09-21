@@ -6,7 +6,7 @@ import  AddressRepository  from '../repositories/address.repository';
 import { Connection } from 'mongoose';
 import { TenantModelFactory } from '../utils/tenantModelFactory';
 import Logging from '../libraries/logging.library';
-import { PaginatedResult, PaginationOptions, QueryOptions } from '@/repositories/repository';
+import { PaginatedResult, PaginationOptions, QueryOptions } from '../repositories/repository';
 import database, { IDatabase } from "../database";
 class UserService {
    

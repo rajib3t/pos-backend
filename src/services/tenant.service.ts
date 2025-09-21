@@ -3,7 +3,7 @@ import { TenantRepository } from '../repositories/tenant.repository';
 import CreateDatabase from '../database/create';
 import { TenantConnectionManager } from '../database/tenantConnection';
 import Logging from '../libraries/logging.library';
-import { PaginatedResult, PaginationOptions, QueryOptions } from '@/repositories/repository';
+import { PaginatedResult, PaginationOptions, QueryOptions } from '../repositories/repository';
 export default class TenantService {
     private static instance: TenantService;
     private tenantRepository: TenantRepository;

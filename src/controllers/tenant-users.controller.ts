@@ -12,9 +12,8 @@ import { IUser } from "../models/user.model";
 import { hashPassword } from "../utils/passwords";
 import EventService from "../events/EventService";
 import addressRepository from "../repositories/address.repository";
-import { IAddress } from "@/models/address.model";
+import { IAddress } from "../models/address.model";
 import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
-import { EmitUserCreated, EmitUserUpdated, EmitUserDeleted, EmitUserViewed } from "../decorators/event.decorator";
 import CacheMiddleware from "../middlewares/cache.middleware";
 import CacheService from "../services/cache.service";
 import { changeUserPasswordForTenantSchema, createUserForTenantSchema, deleteUserForTenantSchema, getUserForTenantSchema, getUsersForTenantSchema, updateUserForTenantSchema } from "../validators/user.validator";
@@ -34,7 +33,7 @@ import {
     isDatabaseError
 } from "../errors/CustomErrors";
 import { rateLimitConfig } from "../config";
-import { th } from "zod/locales";
+
 
 class TenantUserController extends Controller{
      private tenantService: TenantService;
