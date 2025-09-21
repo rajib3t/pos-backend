@@ -1,6 +1,6 @@
-import { Model, Connection } from "mongoose";
+import { Connection } from "mongoose";
 
-import { TenantModelFactory } from "../../utils/tenantModelFactory";
+
 import MaterialCategory, { IMaterialCategory } from "../../models/materials/material-category.model";
 import { PaginatedResult, PaginationOptions, Repository } from "../repository";
 import BaseRepository from "../base.repository";

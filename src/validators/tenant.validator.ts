@@ -22,11 +22,14 @@ const tenantSettingSchema = z.object({
 
 const tenantCreateSchema = z.object({
     body: z.object({
-        name: z.string().min(3, "Name must be at least 3 characters").max(100, "Name is too long"),
-        subdomain: z.string().min(3, "Subdomain must be at least 3 characters")
+        name: z.string().trim().min(2, "Name must be at least 2 characters").max(25, "Name is too long"),
+        subdomain: z.string().trim().min(3, "Subdomain must be at least 3 characters")
             .max(50, "Subdomain is too long")
             .regex(/^[a-zA-Z0-9-]+$/, "Subdomain can only contain letters, numbers, and hyphens"),
-       
+        ownerName:z.string().min(3, "Name must be at least 3 characters").max(50, "Name is too long"),
+        ownerEmail:z.string().trim().pipe(z.email("Invalid email format")),
+        ownerMobile: z.string().trim().min(10, "Mobile number must be at least 10 digits").max(15, "Mobile number is too long").optional(),
+        ownerPassword: z.string().min(6, "Password must be at least 6 characters").max(100, "Password is too long"),
     })
 });
 

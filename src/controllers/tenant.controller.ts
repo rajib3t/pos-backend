@@ -15,7 +15,7 @@ import EventService from "../events/EventService";
 import CacheMiddleware from "../middlewares/cache.middleware";
 import CacheService from "../services/cache.service";
 import EventEmissionMiddleware from "../middlewares/eventEmission.middleware";
-import ErrorHandler from "../errors/ErrorHandler";
+import { hashPassword } from "../utils/passwords";
 import { 
     ValidationError, 
     DatabaseError, 
@@ -31,16 +31,20 @@ import {
     isDeletionFailedError
 } from "../errors/CustomErrors";
 import { rateLimitConfig } from "../config";
-
+import {TenantConnectionService} from "../services/tenantConnection.service";
+import { email } from "zod";
+import { password } from "bun";
+import { IUser } from "../models/user.model";
 class TenantController extends Controller{
     private tenantService: TenantService;
     private userService: UserService;
-    
+    private connectionService: TenantConnectionService;
     constructor() {
         super()
         this.initializeRoutes();
         this.tenantService = TenantService.getInstance();
         this.userService = UserService.getInstance();
+        this.connectionService = TenantConnectionService.getInstance();
     }
 
     private initializeRoutes() {
@@ -172,7 +176,7 @@ class TenantController extends Controller{
 
     private create = async (req: Request , res: Response, next: NextFunction)=>  {
         const userId = req.userId; // Assuming req.user is populated by authentication middleware
-        const {name, subdomain} = req.body;
+        const {name, subdomain, ownerEmail, ownerMobile, ownerPassword, ownerName} = req.body;
         
         try {
             // Validation checks
@@ -182,6 +186,8 @@ class TenantController extends Controller{
                     !subdomain ? "subdomain: Subdomain is required" : ""
                 ].filter(Boolean));
             }
+
+
 
             // Check for existing name
             const isNameTaken = await this.tenantService.checkTenantExists(name);
@@ -211,18 +217,31 @@ class TenantController extends Controller{
                 );
             }
             const sanitizedTenant = DataSanitizer.sanitizeData<ITenant>(createdTenant, ['databasePassword']);
-            
+            const hashedPassword = await hashPassword(ownerPassword);
+
+            const tenantConnection = await this.connectionService.getTenantConnection(createdTenant.subdomain);
+            const userData : Partial<IUser> = {
+                name:ownerName,
+                email:ownerEmail,
+                password:hashedPassword,
+                mobile:ownerMobile,
+                role:'owner'
+            }
+            const user = await this.userService.create(tenantConnection.connection, userData);
             // Get owner information for enhanced email notifications
             let ownerInfo = null;
             try {
+               
                 // Get owner details from the main database (landlord context)
-                const owner = await this.userService.findById(userId!);
+                const owner = await this.userService.findById(tenantConnection.connection,user?._id as string);
                 if (owner) {
                     ownerInfo = {
                         ownerEmail: owner.email,
                         ownerName: owner.name
                     };
                 }
+                
+               
             } catch (error) {
                 Logging.warn('Could not fetch owner info for tenant creation email', error);
             }

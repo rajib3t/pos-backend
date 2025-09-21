@@ -1,9 +1,9 @@
 import { Connection } from "mongoose";
 import MaterialCategoryRepository from "../../repositories/materials/material-category.repository";
 import { IMaterialCategory } from "../../models/materials/material-category.model";
-import { PaginatedResult, PaginationOptions, QueryOptions } from '@/repositories/repository';
-import Logging from "@/libraries/logging.library";
-import { options } from "joi";
+import { PaginatedResult, PaginationOptions, QueryOptions } from '../../repositories/repository';
+import Logging from "../../libraries/logging.library";
+
 
 class MaterialCategoryService {
     private static instance: MaterialCategoryService;
