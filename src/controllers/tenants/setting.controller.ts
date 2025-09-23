@@ -1,4 +1,4 @@
-import e, { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
 
 import { Controller } from "../controller";
 import TenantService from "../../services/tenant.service";

@@ -1,9 +1,13 @@
 import { Schema, model, Document } from "mongoose";
 import { IUser } from "../user.model";
 
+
+
 export interface IStore extends Document {
     name: string;
     code: string;
+    mobile:string;
+    email:string;
     status: 'inactive' | 'active';
     createdBy: IUser["_id"];
     updatedBy?: IUser["_id"]; // Optional since it might not be set initially
@@ -27,6 +31,21 @@ const StoreSchema: Schema = new Schema({
         trim: true,
         maxlength: [10, 'Store code cannot exceed 10 characters'],
         match: [/^[A-Z0-9]+$/, 'Store code can only contain uppercase letters and numbers']
+    },
+    mobile: {
+        type: String,
+        required: [true, 'Mobile number is required'],
+        trim: true,
+        maxlength: [10, 'Mobile number cannot exceed 10 characters']
+
+    },
+    email: {
+        type: String,
+        required:[true, "Email is required "],
+        trim:true,
+        maxlength: [100, "Email cannot exceed 100 characters"],
+        match:[/^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/, "Please enter a valid email address"]
+
     },
     status: {
         type: String,

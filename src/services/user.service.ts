@@ -88,23 +88,23 @@ class UserService {
 
                
 
-   public async findById(id: string, options?: QueryOptions): Promise<IUser | null>;
-public async findById(connection: Connection, id: string, options?: QueryOptions): Promise<IUser | null>;
-public async findById(connectionOrId: string | Connection, idOrOptions?: string | QueryOptions, options?: QueryOptions): Promise<IUser | null> {
-    if (connectionOrId instanceof Connection) {
-        // Tenant-aware version
-        try {
-            const tenantUserRepository = new UserRepository(connectionOrId);
-            return await tenantUserRepository.findById(idOrOptions as string, options);
-        } catch (error) {
-            Logging.error(`Failed to find user by ID: ${error}`);
-            throw error;
+    public async findById(id: string, options?: QueryOptions): Promise<IUser | null>;
+    public async findById(connection: Connection, id: string, options?: QueryOptions): Promise<IUser | null>;
+    public async findById(connectionOrId: string | Connection, idOrOptions?: string | QueryOptions, options?: QueryOptions): Promise<IUser | null> {
+        if (connectionOrId instanceof Connection) {
+            // Tenant-aware version
+            try {
+                const tenantUserRepository = new UserRepository(connectionOrId);
+                return await tenantUserRepository.findById(idOrOptions as string, options);
+            } catch (error) {
+                Logging.error(`Failed to find user by ID: ${error}`);
+                throw error;
+            }
+        } else {
+            // Original version
+            return this.userRepository.findById(connectionOrId, idOrOptions as QueryOptions | undefined);
         }
-    } else {
-        // Original version
-        return this.userRepository.findById(connectionOrId, idOrOptions as QueryOptions | undefined);
     }
-}
 
     
 

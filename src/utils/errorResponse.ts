@@ -1,5 +1,5 @@
 import {  Response } from "express";
-export interface ErrorPayload {
+export interface ErrorPayload{
   res: Response;
   statusCode?: number;               // default 500
   message?: string;

@@ -37,7 +37,6 @@ UserSchema.virtual("addresses", {
 });
 
 // Additional indexes for better query performance
-UserSchema.index({ mobile: 1 }); // Index for mobile number queries
 UserSchema.index({ status: 1 }); // Index for status-based queries
 UserSchema.index({ role: 1 }); // Index for role-based queries
 UserSchema.index({ createdAt: -1 }); // Index for sorting by creation date
