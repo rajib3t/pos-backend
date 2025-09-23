@@ -110,6 +110,7 @@ class StoreService {
     public async getDataWithPagination(connectionOrOptions?: Connection | PaginationOptions<IStore>, optionsArg?: PaginationOptions<IStore>): Promise<PaginatedResult<IStore> | null> {
         if (connectionOrOptions instanceof Connection) {
             // Using tenant connection
+            Logging.info(`Using tenant database for getDataWithPagination`);
             const tenantStoreRepository = new StoreRepository(connectionOrOptions);
             return tenantStoreRepository.findPaginated(optionsArg || {});
         } else {

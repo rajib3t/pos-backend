@@ -118,8 +118,9 @@ class StoreController extends Controller{
     /**
      * Get all stores with pagination
      */
-    private async index(req: Request, res: Response, next: NextFunction): Promise<void> {
+    private  index =  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         
+         
         const { 
             page, 
             limit, 
@@ -198,6 +199,7 @@ class StoreController extends Controller{
                 filter,
                 sort
             });
+         
             if (!result) {
                 throw new NotFoundError("No stores found", "stores", req.isLandlord ? 'landlord' : req.tenant?._id as string);
             }
@@ -229,6 +231,7 @@ class StoreController extends Controller{
             
           
         } catch (error) {
+            Logging.error('error', error)
             // Enhanced error handling for user listing
             if (isValidationError(error)) {
                 errorResponse.sendError({
@@ -262,7 +265,7 @@ class StoreController extends Controller{
                 });
                 return;
             }
-
+            
             // Log unexpected errors
             Logging.error("Unexpected error in stores listing:", error);
             errorResponse.sendError({
@@ -279,12 +282,13 @@ class StoreController extends Controller{
      * Create Store 
      */
     private create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-        const userId = req.params.userId;
+        this.validateTenantContext(req);
+        const userId = req.userId
         const { name, code, email, mobile} = req.body;
-        console.log(req.tenantConnection);
+      
         
         try {
-            this.validateTenantContext(req);
+            
                 // Validation checks
                 if(!name || !code){
                     throw new ValidationError("Name and code are required", [
@@ -294,14 +298,14 @@ class StoreController extends Controller{
                 }
 
             // Check for existing name
-            const isNameTaken = await this.storeService.findAllByKey(req.tenantConnection!,name);
+            const isNameTaken = await this.storeService.findAllByKey(req.tenantConnection!,{name:name});
             if(isNameTaken &&  isNameTaken.length > 0){
 
             
                 throw new ConflictError("Name is already in use", "name", name);
             }
             // Check for existing name
-            const isCodeTaken = await this.storeService.findAllByKey(req.tenantConnection!,code);
+            const isCodeTaken = await this.storeService.findAllByKey(req.tenantConnection!,{code:code});
             if(isCodeTaken &&  isCodeTaken.length > 0){
 
             

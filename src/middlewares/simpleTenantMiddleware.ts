@@ -92,6 +92,7 @@ export class SimpleTenantMiddleware {
         try {
             const subdomain = this.extractSubdomain(req);
             
+            
             if (!subdomain) {
                 // No tenant subdomain - landlord request
                 req.isLandlord = true;

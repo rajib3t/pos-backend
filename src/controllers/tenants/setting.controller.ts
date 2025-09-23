@@ -26,7 +26,7 @@ class SettingController extends Controller {
     private initializeRoutes() {
         // Get settings with caching and rate limiting
         this.router.get(
-            "/settings/:subdomain", 
+            "/settings/:storeID", 
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
                 maxRequests: 100,
@@ -46,7 +46,7 @@ class SettingController extends Controller {
 
         // Update settings with rate limiting and cache invalidation
         this.router.put(
-            "/settings/:subdomain", 
+            "/settings/:storeID", 
             ValidateMiddleware.getInstance().validate(tenantSettingSchema),
             CacheMiddleware.rateLimit({
                 windowMs: 15 * 60 * 1000, // 15 minutes
@@ -120,38 +120,22 @@ class SettingController extends Controller {
         }
 
     private async index(req: Request, res: Response) {
-        this.validateTenantContext(req);
+        console.log(req);
+        
        
-        const tenantId = req.params.subdomain as string;
-        if (!tenantId) {
-            return errorResponse.sendError({
-                res,
-                statusCode: 400,
-                message: "Tenant subdomain header (x-tenant-subdomain) is required"
-            })
-        }
+        const storeID = req.params.storeID as string;
+       
 
         try {
-            const tenant = await this.tenantService.getTenantSettings(tenantId);
+           this.validateTenantContext(req);
             
-            if (!tenant) {
-                return errorResponse.sendError({
-                    res,
-                    statusCode: 404,
-                    message: "Settings not found for the tenant"
-                });
-            }
-            let settings 
-           if (req.isLandlord) {
-                // Landlord request - use main database
-                settings = await this.settingService.findSettingTenantById(tenant._id);
-            } else {
+         
                 // Tenant request - use tenant database
-                settings = await this.settingService.findSettingTenantById(req.tenantConnection!, tenant._id);
-            }
+            const    settings = await this.settingService.findSettingById(req.tenantConnection!, storeID);
+            
             
             const responseData = {
-                shopName: settings?.shopName || tenant.name,
+                shopName: settings?.shopName ,
                 code:settings?.code,
                 address1: settings?.address,
                 address2: settings?.address2,
@@ -173,11 +157,11 @@ class SettingController extends Controller {
             EventService.emitAuditTrail(
                 'settings_viewed',
                 'settings',
-                tenant._id as string,
+                settings?._id as string,
                 req.userId || 'anonymous',
                 {
                     context: this.getContextInfo(req),
-                    tenantSubdomain: tenantId,
+                    tenantSubdomain: req.tenant?.subdomain,
                     hasSettings: !!settings,
                     settingsFields: settings ? Object.keys(settings.toObject ? settings.toObject() : settings) : []
                 },
@@ -202,31 +186,17 @@ class SettingController extends Controller {
 
     private update = async (req: Request, res: Response) => {
         this.validateTenantContext(req);
-        const tenantId = req.params.subdomain as string;
-      
+        const storeID = req.params.storeID as string;
+        const settingData = req.body
         
-        if (!tenantId) {
-            return errorResponse.sendError({
-                res,
-                statusCode: 400,
-                message: "Tenant subdomain header (x-tenant-subdomain) is required"
-            })
-        }
+        
        
 
         try {
-           const tenant = await this.tenantService.getTenantSettings(tenantId);
+           
             
 
-            if (!tenant) {
-                return errorResponse.sendError({
-                    res,
-                    statusCode: 404,
-                    message: "Settings not found for the tenant"
-                });
-            }
-
-            const updatedSetting = await this.settingService.findSettingTenantById(req.tenantConnection!, tenant._id);
+            const updatedSetting = await this.settingService.findSettingById(req.tenantConnection!, storeID);
             
             
             let settings;
@@ -236,17 +206,17 @@ class SettingController extends Controller {
             if(!updatedSetting){
                 // Creating new settings
                 isCreate = true;
-                settings = await this.settingService.createSetting(req.tenantConnection!, { tenant: tenant._id, ...req.body });
+                settings = await this.settingService.createSetting(req.tenantConnection!, settingData );
                 
                 // Emit settings created events
                 EventService.emitAuditTrail(
                     'settings_created',
                     'settings',
-                    tenant._id as string,
+                    settings._id as string,
                     req.userId || 'system',
                     {
                         context: this.getContextInfo(req),
-                        tenantSubdomain: tenantId,
+                        tenantSubdomain: req.tenant?.subdomain,
                         settingsData: DataSanitizer.sanitizeData(settings, ['__v']),
                         createdFields: Object.keys(req.body)
                     },
@@ -259,7 +229,7 @@ class SettingController extends Controller {
                     resource: 'settings',
                     resourceId: settings._id as string,
                     userId: req.userId || 'system',
-                    tenantId: tenant._id as string,
+                    settingsID: settings._id as string,
                     data: DataSanitizer.sanitizeData(settings, ['__v'])
                 }, EventService.createContextFromRequest(req));
             }else{
@@ -271,11 +241,11 @@ class SettingController extends Controller {
                 EventService.emitAuditTrail(
                     'settings_updated',
                     'settings',
-                    tenant._id as string,
+                    settings?._id as string,
                     req.userId || 'system',
                     {
                         context: this.getContextInfo(req),
-                        tenantSubdomain: tenantId,
+                        tenantSubdomain: req.tenant?.subdomain,
                         previousData: DataSanitizer.sanitizeData(previousData, ['__v']),
                         newData: settings ? DataSanitizer.sanitizeData(settings, ['__v']) : null,
                         updatedFields: Object.keys(req.body)
@@ -289,7 +259,7 @@ class SettingController extends Controller {
                     resource: 'settings',
                     resourceId: settings?._id as string,
                     userId: req.userId || 'system',
-                    tenantId: tenant._id as string,
+                    settingID: settings?._id as string,
                     data: settings ? DataSanitizer.sanitizeData(settings, ['__v']) : null,
                     previousData: DataSanitizer.sanitizeData(previousData, ['__v'])
                 }, EventService.createContextFromRequest(req));
@@ -297,8 +267,8 @@ class SettingController extends Controller {
 
             // Emit tenant settings change event (affects tenant configuration)
             EventService.emitCustomEvent('tenant.settings.changed', {
-                tenantId: tenant._id,
-                tenantSubdomain: tenantId,
+                settingID: settings?._id,
+                tenantSubdomain: req.tenant?.subdomain,
                 operation: isCreate ? 'created' : 'updated',
                 settingsId: settings?._id,
                 changedBy: req.userId || 'system'
