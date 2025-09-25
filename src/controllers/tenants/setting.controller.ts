@@ -13,6 +13,7 @@ import CacheService from "../../services/cache.service";
 import EventEmissionMiddleware from "../../middlewares/eventEmission.middleware";
 import EventService from "../../events/EventService";
 import DataSanitizer from "../../utils/sanitizeData";
+
 class SettingController extends Controller {
     private tenantService: TenantService;
     private settingService: SettingService;
@@ -120,7 +121,7 @@ class SettingController extends Controller {
         }
 
     private async index(req: Request, res: Response) {
-        console.log(req);
+        
         
        
         const storeID = req.params.storeID as string;
@@ -131,7 +132,7 @@ class SettingController extends Controller {
             
          
                 // Tenant request - use tenant database
-            const    settings = await this.settingService.findSettingById(req.tenantConnection!, storeID);
+            const    settings = await this.settingService.findSettingTenantById(req.tenantConnection!, storeID);
             
             
             const responseData = {
@@ -191,13 +192,15 @@ class SettingController extends Controller {
         
         
        
+        
+       
 
         try {
            
             
 
-            const updatedSetting = await this.settingService.findSettingById(req.tenantConnection!, storeID);
-            
+            const updatedSetting = await this.settingService.findSettingTenantById(req.tenantConnection!, storeID);
+             
             
             let settings;
             let isCreate = false;
@@ -205,8 +208,10 @@ class SettingController extends Controller {
             
             if(!updatedSetting){
                 // Creating new settings
+
                 isCreate = true;
-                settings = await this.settingService.createSetting(req.tenantConnection!, settingData );
+                settings = await this.settingService.createSetting(req.tenantConnection!, {...settingData, store:storeID} );
+                console.log(settings);
                 
                 // Emit settings created events
                 EventService.emitAuditTrail(
@@ -235,7 +240,7 @@ class SettingController extends Controller {
             }else{
                 // Updating existing settings
                 previousData = updatedSetting.toObject ? updatedSetting.toObject() : updatedSetting;
-                settings = await this.settingService.updateSetting(req.tenantConnection!, updatedSetting?._id as string, req.body);
+                settings = await this.settingService.updateSetting(req.tenantConnection!, updatedSetting?._id as string, settingData);
                 
                 // Emit settings updated events
                 EventService.emitAuditTrail(

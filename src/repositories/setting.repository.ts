@@ -2,41 +2,24 @@ import { Model, Connection } from "mongoose";
 import Setting, { ISetting } from "../models/setting.model";
 import { TenantModelFactory } from "../utils/tenantModelFactory";
 import { PaginatedResult, PaginationOptions, Repository } from "./repository";
-export default class SettingRepository  extends Repository<ISetting> {
-    private model: Model<ISetting>;
+import BaseRepository from "./base.repository";
+export default class SettingRepository  extends BaseRepository<ISetting> {
+   
 
     constructor(connection?: Connection) {
-        super();
         if (connection) {
-            // Use tenant-specific connection
-            this.model = TenantModelFactory.getTenantModel<ISetting>(connection, 'Setting', Setting.schema);
-        } else {
-            // Use default master database connection
-            this.model = Setting;
-        }
+                   super(Setting, 'Setting', connection);
+                   
+                } else {
+                    // Use default master database connection
+                    super(Setting);
+                }
+       
     }
 
 
 
-    async create(data: Partial<ISetting>): Promise<ISetting> {
-        return await this.model.create(data);
-    }
-
-    async findAll(): Promise<ISetting[]> {
-        return await this.model.find().lean().exec();
-    }
-
-    async findById(id: string): Promise<ISetting | null> {
-        return await this.model.findById(id).lean().exec();
-    }
-
-    async update(id: string, data: Partial<ISetting>): Promise<ISetting | null> {
-        return await this.model.findByIdAndUpdate(id, data, { new: true }).lean().exec();
-    }
-
-    async delete(id: string): Promise<ISetting | null> {
-        return await this.model.findByIdAndDelete(id).lean().exec();
-    }
+    
 
     async findByKey(condition: { [key: string]: any }): Promise<ISetting | null> {
         return await this.model.findOne(condition).lean().exec();

@@ -6,6 +6,7 @@ import profileRouter from "./profile.route";
 import tenantRouter from "./tenant.route";
 import userRouter from "./user.route";
 import tenantsRouter from "./tenants.route";
+import subAccountController from "../controllers/sub-account.controller";
 class AppRouter{
     private router: Router;
     private routes: RouteConfig[];
@@ -16,6 +17,10 @@ class AppRouter{
             {
                 path: "/",
                 route: indexController
+            },
+            {
+                path:'/',
+                route:subAccountController
             },
             {
                 path: "/auth",

@@ -2,7 +2,7 @@ import SettingRepository from '../repositories/setting.repository';
 import { Connection } from 'mongoose';
 import { ISetting } from '../models/setting.model';
 import { IUser } from '../models/user.model';
-class SettingService {
+class SettingService     {
 
     private static instance: SettingService;
     private settingRepository: SettingRepository;
@@ -46,14 +46,14 @@ class SettingService {
 
     public async findSettingTenantById(id: string): Promise<ISetting | null>;
     public async findSettingTenantById(tenantConnection: Connection, id: string): Promise<ISetting | null>;
-    public async findSettingTenantById(connectionOrId: Connection | string, tenantId?: string): Promise<ISetting | null> {
+    public async findSettingTenantById(connectionOrId: Connection | string, storeID?: string): Promise<ISetting | null> {
         if (connectionOrId instanceof Connection) {
             // Using tenant connection
             this.settingRepository = new SettingRepository(connectionOrId);
-            return this.settingRepository.findByKey({tenant:tenantId!});
+            return this.settingRepository.findByKey({store:storeID!});
         } else {
             // Using main database (backward compatibility)
-        return this.settingRepository.findByKey({tenant: connectionOrId});
+        return this.settingRepository.findByKey({store: connectionOrId});
         }
     }
 
@@ -70,31 +70,7 @@ class SettingService {
         }
     }
 
-    public async deleteSetting(id: string): Promise<ISetting | null>;
-    public async deleteSetting(tenantConnection: Connection, id: string): Promise<ISetting | null>;
-    public async deleteSetting(connectionOrId: Connection | string, id?: string): Promise<ISetting | null> {
-        if (connectionOrId instanceof Connection) {
-            // Using tenant connection
-            this.settingRepository = new SettingRepository(connectionOrId);
-            return this.settingRepository.delete(id!);
-        } else {
-            // Using main database (backward compatibility)
-            return this.settingRepository.delete(connectionOrId);
-        }
-    }
-
-    public async findByKey(condition: { [key: string]: any }): Promise<ISetting | null>;
-    public async findByKey(tenantConnection: Connection, condition: { [key: string]: any }): Promise<ISetting | null>;
-    public async findByKey(connectionOrCondition: Connection | { [key: string]: any }, condition?: { [key: string]: any }): Promise<ISetting | null> {
-        if (connectionOrCondition instanceof Connection) {
-            // Using tenant connection
-            this.settingRepository = new SettingRepository(connectionOrCondition);
-            return this.settingRepository.findByKey(condition!);
-        } else {
-            // Using main database (backward compatibility)
-            return this.settingRepository.findByKey(connectionOrCondition);
-        }
-    }
+    
 
 
   

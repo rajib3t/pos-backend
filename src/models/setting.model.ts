@@ -24,7 +24,7 @@ export interface ISetting extends Document {
 
 const SettingSchema: Schema = new Schema(
   {
-    store: { type: Schema.Types.ObjectId, ref: "Store", required: true, unique: true },
+    store: { type: Schema.Types.ObjectId, ref: "Store", required: true, unique:true},
     shopName: { type: String , required: true },
     code: { type: String , required:true},
     address: { type: String },

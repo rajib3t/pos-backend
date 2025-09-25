@@ -9,6 +9,7 @@ export interface CacheMiddlewareOptions {
     keyGenerator?: (req: Request) => string;
     condition?: (req: Request) => boolean;
     skipCache?: (req: Request) => boolean;
+    shouldCache?: (req: Request, res: Response) => boolean;
     varyBy?: string[]; // Headers to vary cache by
 }
 
@@ -58,13 +59,17 @@ class CacheMiddleware {
                 const originalJson = res.json.bind(res);
                 
                 res.json = function(data: any) {
-                    // Cache the response
-                    CacheService.set(cacheKey, data, {
-                        ttl: options.ttl,
-                        prefix
-                    }).catch(error => {
-                        Logging.error(`Failed to cache response: ${error}` );
-                    });
+                    // Only cache if shouldCache returns true (defaults to true if not provided)
+                    const shouldCache = options.shouldCache ? options.shouldCache(req, res) : true;
+                    
+                    if (shouldCache) {
+                        CacheService.set(cacheKey, data, {
+                            ttl: options.ttl,
+                            prefix
+                        }).catch(error => {
+                            Logging.error(`Failed to cache response: ${error}`);
+                        });
+                    }
 
                     // Set cache headers
                     res.set({
