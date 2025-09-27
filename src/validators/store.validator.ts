@@ -72,6 +72,20 @@ const storeStaffQuerySchema = z.object({
     })
 });
 
+// List eligible users to add as staff (exclude owners and users already assigned to the store)
+const storeStaffCandidateQuerySchema = z.object({
+    query: z.object({
+        page: z.string().regex(/^\d+$/, "Page must be numeric").optional(),
+        limit: z.string().regex(/^\d+$/, "Limit must be numeric").optional(),
+        search: z.string().optional(),
+        sortField: z.string().optional(),
+        sortDirection: z.enum(["asc", "desc"]).optional(),
+    }),
+    params: z.object({
+        storeID: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),
+    })
+});
+
 // Create store staff (membership) schema
 const storeStaffCreateSchema = z.object({
     params: z.object({
@@ -92,5 +106,6 @@ export {
     getStoreSchema,
     deleteStoreSchema,
     storeStaffQuerySchema,
-    storeStaffCreateSchema
+    storeStaffCreateSchema,
+    storeStaffCandidateQuerySchema
 }
