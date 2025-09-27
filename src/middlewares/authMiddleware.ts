@@ -8,6 +8,8 @@ import Logging from "../libraries/logging.library";
 declare module 'express-serve-static-core' {
   interface Request {
     userId?: string;
+    subdomain?: string;
+    storeId?: string;
     // userType?: string;
     // organizationId?: string; // Add organizationId to the request
   }
@@ -33,7 +35,7 @@ class AuthMiddleware {
         const token: string | undefined = req?.headers?.authorization?.split(' ')[1];
         // Check for user impersonation header
         const userId = req.headers['x-user-id'] as string;
-
+        const subdomain = req.headers["x-tenant-subdomain"] as string;
         //this.tokenService = TokenService.getInstance();
         try {
             if (!token) {
@@ -61,7 +63,14 @@ class AuthMiddleware {
             // Prefer impersonation header if provided, else fallback to token payload
             const payloadUserId = (tokenVerify as any).userId as string | undefined;
             req['userId'] = userId || payloadUserId;
-
+            if(subdomain) {
+                req['subdomain'] = subdomain;
+                if(req.headers['x-store-id'] as string) {
+                    req['storeId'] = req.headers['x-store-id'] as string;
+                }
+                
+            }
+            
             if (!req['userId']) {
                 responseResult.sendResponse({
                     res,

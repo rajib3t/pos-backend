@@ -67,9 +67,7 @@ class UserController extends Controller {
                 const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
                 const patterns = [
                     `users:list:${context}:*`,
-                    `users:stats:${context}:*`,
-                    // Invalidate staff candidate cache since new user affects candidate eligibility
-                    `staff:candidates:list:${context}:*`
+                    `users:stats:${context}:*`
                 ];
                 
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
@@ -77,9 +75,7 @@ class UserController extends Controller {
                     patterns.push(
                         `users:list:${req.tenant._id}:*`,
                         `users:stats:${req.tenant._id}:*`,
-                        `tenant:${req.tenant._id}:summary`,
-                        // Also invalidate landlord staff candidate cache
-                        `staff:candidates:list:${req.tenant._id}:*`
+                        `tenant:${req.tenant._id}:summary`
                     );
                 }
                 
@@ -147,9 +143,7 @@ class UserController extends Controller {
                 const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
-                    `users:stats:${context}:*`,
-                    // Invalidate staff candidate cache since user update may affect eligibility
-                    `staff:candidates:list:${context}:*`
+                    `users:stats:${context}:*`
                 ];
                 
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
@@ -157,9 +151,7 @@ class UserController extends Controller {
                     patterns.push(
                         `user:detail:${req.tenant._id}:${req.params.id}`,
                         `users:list:${req.tenant._id}:*`,
-                        `users:stats:${req.tenant._id}:*`,
-                        // Also invalidate landlord staff candidate cache
-                        `staff:candidates:list:${req.tenant._id}:*`
+                        `users:stats:${req.tenant._id}:*`
                     );
                 }
                 
@@ -185,9 +177,7 @@ class UserController extends Controller {
                 const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
-                    `users:stats:${context}:*`,
-                    // Invalidate staff candidate cache since user deletion affects eligibility
-                    `staff:candidates:list:${context}:*`
+                    `users:stats:${context}:*`
                 ];
                 
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
@@ -196,9 +186,7 @@ class UserController extends Controller {
                         `user:detail:${req.tenant._id}:${req.params.id}`,
                         `users:list:${req.tenant._id}:*`,
                         `users:stats:${req.tenant._id}:*`,
-                        `tenant:${req.tenant._id}:summary`,
-                        // Also invalidate landlord staff candidate cache
-                        `staff:candidates:list:${req.tenant._id}:*`
+                        `tenant:${req.tenant._id}:summary`
                     );
                 }
                 
@@ -224,9 +212,7 @@ class UserController extends Controller {
                 const patterns = [
                     `user:detail:${context}:${req.params.id}`,
                     `users:list:${context}:*`,
-                    `users:stats:${context}:*`,
-                    // Invalidate staff candidate cache since user deactivation affects eligibility
-                    `staff:candidates:list:${context}:*`
+                    `users:stats:${context}:*`
                 ];
                 
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
@@ -234,9 +220,7 @@ class UserController extends Controller {
                     patterns.push(
                         `user:detail:${req.tenant._id}:${req.params.id}`,
                         `users:list:${req.tenant._id}:*`,
-                        `users:stats:${req.tenant._id}:*`,
-                        // Also invalidate landlord staff candidate cache
-                        `staff:candidates:list:${req.tenant._id}:*`
+                        `users:stats:${req.tenant._id}:*`
                     );
                 }
                 
