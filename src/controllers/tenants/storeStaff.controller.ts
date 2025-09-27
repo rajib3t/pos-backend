@@ -107,16 +107,16 @@ class StoreStaffController extends Controller{
                 const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
                 const storeId = req.storeId || req.params.storeID;
                 const patterns = [
-                    `staff:list:${context}:${storeId}:*`,
-                    `staff:stats:${context}:${storeId}:*`,
-                    `staff:candidates:list:${context}:${storeId}:*`
+                    `staff:list:${context}*`,
+                    `staff:stats:${context}*`,
+                    `staff:candidates:list:${context}*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
-                        `staff:list:${req.tenant._id}:${storeId}:*`,
-                        `staff:stats:${req.tenant._id}:${storeId}:*`,
-                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
+                       `staff:list:${req.tenant._id}*`,
+                        `staff:stats:${req.tenant._id}*`,
+                        `staff:candidates:list:${req.tenant._id}*`
                         
                     );
                 }
@@ -142,18 +142,18 @@ class StoreStaffController extends Controller{
             }),
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                const storeId = req.storeId || req.params.storeID;
+                const storeId =  req.params.storeID || req.storeId ;
                 const patterns = [
-                    `staff:list:${context}:${storeId}:*`,
-                    `staff:stats:${context}:${storeId}:*`,
-                    `staff:candidates:list:${context}:${storeId}:*`
+                    `staff:list:${context}*`,
+                    `staff:stats:${context}*`,
+                    `staff:candidates:list:${context}*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
-                        `staff:list:${req.tenant._id}:${storeId}:*`,
-                        `staff:stats:${req.tenant._id}:${storeId}:*`,
-                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
+                        `staff:list:${req.tenant._id}*`,
+                        `staff:stats:${req.tenant._id}*`,
+                        `staff:candidates:list:${req.tenant._id}*`
                     );
                 }
                 return patterns;

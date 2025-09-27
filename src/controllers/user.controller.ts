@@ -70,6 +70,14 @@ class UserController extends Controller {
                     `users:stats:${context}:*`
                 ];
                 
+                // If storeId is available in request, also invalidate store staff cache
+                if (req.storeId && req.tenant) {
+                    patterns.push(
+                        `staff:candidates:list:${context}:${req.storeId}:*`,
+                        `staff:list:${context}:${req.storeId}:*`
+                    );
+                }
+                
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
@@ -77,6 +85,14 @@ class UserController extends Controller {
                         `users:stats:${req.tenant._id}:*`,
                         `tenant:${req.tenant._id}:summary`
                     );
+                    
+                    // Also invalidate landlord store staff cache if storeId available
+                    if (req.tenant) {
+                        patterns.push(
+                            `staff:candidates:list:${req.tenant._id}*`,
+                            `staff:list:${req.tenant._id}*`
+                        );
+                    }
                 }
                 
                 return patterns;
@@ -180,6 +196,14 @@ class UserController extends Controller {
                     `users:stats:${context}:*`
                 ];
                 
+                // If storeId is available in request, also invalidate store staff cache
+                if (req.storeId && req.tenant) {
+                    patterns.push(
+                        `staff:candidates:list:${context}:${req.storeId}:*`,
+                        `staff:list:${context}:${req.storeId}:*`
+                    );
+                }
+                
                 // If tenant operation, also invalidate landlord cache keys that use tenantId
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
@@ -188,6 +212,14 @@ class UserController extends Controller {
                         `users:stats:${req.tenant._id}:*`,
                         `tenant:${req.tenant._id}:summary`
                     );
+                    
+                    // Also invalidate landlord store staff cache if storeId available
+                    if (req.tenant) {
+                        patterns.push(
+                            `staff:candidates:list:${req.tenant._id}*`,
+                            `staff:list:${req.tenant._id}:*`
+                        );
+                    }
                 }
                 
                 return patterns;
