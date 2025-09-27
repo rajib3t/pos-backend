@@ -35,7 +35,7 @@ const getStoreSchema = z.object({
 // Delete store schema
 const deleteStoreSchema = z.object({
     params: z.object({
-        id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),
+        storeID: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),
     })
 });
 
@@ -46,6 +46,8 @@ const storeQuerySchema = z.object({
         limit: z.string().regex(/^\d+$/, "Limit must be numeric").optional(),
         name: z.string().optional(),
         code: z.string().optional(),
+        email:z.string().optional(),
+        mobile:z.string().optional(),
         createdAtFrom: z.string().optional(),
         createdAtTo: z.string().optional(),
         sortField: z.string().optional(),
@@ -54,10 +56,41 @@ const storeQuerySchema = z.object({
 });
 
 
+
+const storeStaffQuerySchema = z.object({
+    query: z.object({
+        page: z.string().regex(/^\d+$/, "Page must be numeric").optional(),
+        limit: z.string().regex(/^\d+$/, "Limit must be numeric").optional(),
+        role: z.string().optional(),
+        status: z.string().optional(),
+        userName: z.string().optional(),
+        sortField: z.string().optional(),
+        sortDirection: z.enum(["asc", "desc"]).optional(),
+    }),
+    params: z.object({
+        storeID: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),
+    })
+});
+
+// Create store staff (membership) schema
+const storeStaffCreateSchema = z.object({
+    params: z.object({
+        storeID: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),
+    }),
+    body: z.object({
+        userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID format"),
+        role: z.enum(["staff", "admin", "manager", "viewer"]).optional(),
+        status: z.enum(["active", "inactive", "pending"]).optional(),
+        permissions: z.array(z.string().min(1)).optional()
+    })
+});
+
 export {
     storeQuerySchema,
     createStoreSchema,
     updateStoreSchema,
     getStoreSchema,
-    deleteStoreSchema
+    deleteStoreSchema,
+    storeStaffQuerySchema,
+    storeStaffCreateSchema
 }

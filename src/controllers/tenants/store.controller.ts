@@ -24,8 +24,10 @@ import { rateLimitConfig } from '../../config';
 import CacheMiddleware from '../../middlewares/cache.middleware';
 import EventEmissionMiddleware from '../../middlewares/eventEmission.middleware';
 import ValidateMiddleware from '../../middlewares/validate';
-import { storeQuerySchema , createStoreSchema, updateStoreSchema, getStoreSchema} from '../../validators/store.validator';
+import { storeQuerySchema , createStoreSchema, updateStoreSchema, getStoreSchema, deleteStoreSchema} from '../../validators/store.validator';
 import { IStore } from '../../models/store/store.model';
+import { th } from 'zod/locales';
+
 
 class StoreController extends Controller{
     private storeService: StoreService;
@@ -138,7 +140,46 @@ class StoreController extends Controller{
             }),
             EventEmissionMiddleware.forUpdate('user'),
             this.asyncHandler(this.update.bind(this))
+        );
+        this.router.delete('/:storeID',
+            validateMiddleware.validate(deleteStoreSchema),
+            CacheMiddleware.rateLimit({
+                windowMs: 60 * 60 * 1000,
+                maxRequests: rateLimitConfig.delete,
+                keyGenerator: (req) => {
+                    const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
+                    return `store:delete:${req.ip}:${context}`;
+                }
+            }),
+            CacheMiddleware.invalidate((req) => {
+                const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
+                const patterns = [
+                    `stores:list:${context}:*`,
+                    `stores:stats:${context}:*`
+                ];
+                
+                // If tenant operation, also invalidate landlord cache keys that use tenantId
+                if (!req.isLandlord && req.tenant?._id) {
+                    patterns.push(
+                        `stores:list:${req.tenant._id}:*`,
+                        `stores:stats:${req.tenant._id}:*`,
+                    );
+                }
+                
+                return patterns;
+            }),
+            CacheMiddleware.invalidate((req) => {
+                const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain || 'unknown';
+                return [
+                    `settings:detail:${req.params.subdomain}:${context}`,
+                    `settings:stats:*`,
+                    `tenant:detail:*` // Also invalidate tenant cache as settings affect tenant data
+                ];
+            }),
+            this.asyncHandler(this.delete.bind(this))
         )
+
+
     }
    
     /**
@@ -678,6 +719,86 @@ class StoreController extends Controller{
 
     }
     
+
+    /**
+     * Delete Store
+     */
+    private delete = async (req: Request, res: Response, next:NextFunction) : Promise<void> =>{
+        this.validateTenantContext(req);
+         const { storeID } = req.params;
+         try {
+            const storeToDelete = await this.storeService.findById(req.tenantConnection!, storeID);
+             if (!storeToDelete) {
+                throw new NotFoundError('Store not found', 'store', storeID);
+            }
+            const store = await this.storeService.delete(req.tenantConnection!, storeID);
+             if (!store) {
+                throw new DeletionFailedError(
+                    "Failed to delete store", 
+                    "store", 
+                    storeID, 
+                    "store not found or deletion operation failed"
+                );
+            }
+
+             responseResult.sendResponse({
+                res,
+                data: null,
+                message: 'User deleted successfully',
+                statusCode: 200
+            });
+            return;
+
+         } catch (error) {
+            if (error instanceof NotFoundError) {
+                errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 404,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId
+                    }
+                });
+                return;
+            }
+
+            if (isDeletionFailedError(error)) {
+                Logging.warn("User deletion failed:", error);
+                errorResponse.sendError({
+                    res,
+                    message: error.message,
+                    statusCode: 422,
+                    details: {
+                        resource: error.resource,
+                        resourceId: error.resourceId,
+                        reason: error.reason,
+                        dependencies: error.dependencies
+                    }
+                });
+                return;
+            }
+
+            if (isDatabaseError(error)) {
+                Logging.error("Database error in user deletion:", error);
+                errorResponse.sendError({
+                    res,
+                    message: "Database operation failed",
+                    statusCode: 500
+                });
+                return;
+            }
+
+            // Log unexpected errors
+            Logging.error("Unexpected error in user deletion:", error);
+            errorResponse.sendError({
+                res,
+                message: 'Failed to delete user',
+                statusCode: 500,
+                details: process.env.NODE_ENV === 'development' ? error : undefined
+            });
+         }
+    }
 }
 
 export default new StoreController().router;
