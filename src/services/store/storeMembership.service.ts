@@ -138,6 +138,7 @@ class StoreMembershipService {
     public async findByUser(connectionOrUserId: Connection | string, userIdOrStatus?: string | IStoreMembership['status'], statusArg?: IStoreMembership['status']): Promise<IStoreMembership[]> {
         if (connectionOrUserId instanceof Connection) {
             const repo = new StoreMembershipRepository(connectionOrUserId);
+            Logging.info('connection', repo);
             return await repo.findByUser(userIdOrStatus as string, statusArg as any);
         }
         return await this.repository.findByUser(connectionOrUserId, userIdOrStatus as any);

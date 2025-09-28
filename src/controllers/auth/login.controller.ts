@@ -11,10 +11,11 @@ import ValidateMiddleware from '../../middlewares/validate'
 import { loginSchema } from "../../validators/auth.validator";
 import EventService from "../../events/EventService";
 import { cookieConfig } from "../../config";
+import StoreMembershipService from "../../services/store/storeMembership.service";
 class LoginController extends Controller {
     private userService: UserService;
     private tokenService: TokenService;
-    
+    private storeMemberService : StoreMembershipService 
     constructor() {
         super();
         this.router.post('/login', ValidateMiddleware.getInstance().validate(loginSchema), this.asyncHandler(this.login));
@@ -22,6 +23,7 @@ class LoginController extends Controller {
         this.router.post('/refresh', this.asyncHandler(this.refreshToken));
         this.userService = UserService.getInstance();
         this.tokenService = TokenService.getInstance();
+        this.storeMemberService = StoreMembershipService.getInstance();
     }
 
     /**
@@ -120,6 +122,9 @@ class LoginController extends Controller {
             
             const accessToken = await this.tokenService.generateToken(tokenPayload);
             const refreshToken = await this.tokenService.generateRefreshToken(tokenPayload, connection);
+            //const store = this.storeMemberService.findByUser(connection!, user._id as string,'pending')
+         //   console.log('Store',store);
+            
             const userResponse = { 
                 email: user.email, 
                 name: user.name, 
@@ -129,8 +134,10 @@ class LoginController extends Controller {
                 tenantId: req.tenant?._id || null,
                 tenantName: req.tenant?.name || 'Landlord',
                 permissions: req.isLandlord ? ['admin', 'landlord'] : ['tenant'],
-                loginTime: new Date().toISOString()
+                loginTime: new Date().toISOString(),
+                role:user.role
             };
+
             const loginData = { accessToken, user: userResponse, refreshToken };
             
             res.cookie("refreshToken", refreshToken, {

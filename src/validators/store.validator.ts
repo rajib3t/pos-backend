@@ -64,8 +64,13 @@ const storeStaffQuerySchema = z.object({
         role: z.string().optional(),
         status: z.string().optional(),
         userName: z.string().optional(),
+        name: z.string().optional(), // Support name filter
+        email: z.string().optional(), // Support email filter
+        timezone: z.string().optional(), // Support timezone parameter
         sortField: z.string().optional(),
         sortDirection: z.enum(["asc", "desc"]).optional(),
+        sortBy: z.string().optional(), // Support legacy sortBy
+        sortOrder: z.string().optional(), // Support legacy sortOrder
     }),
     params: z.object({
         storeID: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store ID format"),

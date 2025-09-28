@@ -36,8 +36,8 @@ class StoreStaffController extends Controller{
                 windowMs: 15 * 60 * 1000,
                 maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                    const storeId = req.params.storeID;
                     return `staff:list:${context}:${storeId}:${req.ip}`;
                 }
             }),
@@ -45,8 +45,8 @@ class StoreStaffController extends Controller{
                 ttl: 300,
                 prefix: 'staff',
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                    const storeId =  req.params.storeID;
                     const queryStr = JSON.stringify(req.query || {});
                     return `list:${context}:${storeId}:${Buffer.from(queryStr).toString('base64')}`;
                 },
@@ -67,8 +67,8 @@ class StoreStaffController extends Controller{
                 windowMs: 15 * 60 * 1000,
                 maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                    const storeId = req.params.storeID;
                     return `staff:candidates:list:${context}:${storeId}:${req.ip}`;
                 }
             }),
@@ -76,8 +76,8 @@ class StoreStaffController extends Controller{
                 ttl: 300,
                 prefix: 'staff',
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                    const storeId = req.params.storeID;
                     const queryStr = JSON.stringify(req.query || {});
                     return `candidates:list:${context}:${storeId}:${Buffer.from(queryStr).toString('base64')}`;
                 },
@@ -98,16 +98,16 @@ class StoreStaffController extends Controller{
                 windowMs: 60 * 60 * 1000,
                 maxRequests: rateLimitConfig.post,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                    const storeId =req.params.storeID;
                     return `staff:add:${context}:${storeId}:${req.ip}`;
                 }
             }),
             CacheMiddleware.invalidate((req) => {
-                const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
-                const storeId = req.storeId || req.params.storeID;
+                const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
+                const storeId = req.params.storeID;
                 const patterns = [
-                    `staff:list:${context}*`,
+                   `staff:list:${context}:${storeId}:${req.ip}`,
                     `staff:stats:${context}*`,
                     `staff:candidates:list:${context}*`
                 ];
@@ -135,13 +135,13 @@ class StoreStaffController extends Controller{
                 windowMs: 60 * 60 * 1000,
                 maxRequests: rateLimitConfig.delete || 5,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.storeId || req.params.storeID;
                     return `staff:remove:${context}:${storeId}:${req.ip}`;
                 }
             }),
             CacheMiddleware.invalidate((req) => {
-                const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                 const storeId =  req.params.storeID || req.storeId ;
                 const patterns = [
                     `staff:list:${context}*`,
@@ -171,7 +171,7 @@ class StoreStaffController extends Controller{
                 windowMs: 60 * 60 * 1000,
                 maxRequests: 10,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.storeId || req.params.storeID;
                     return `staff:cache:clear:${context}:${storeId}:${req.ip}`;
                 }
@@ -189,7 +189,7 @@ class StoreStaffController extends Controller{
                 windowMs: 15 * 60 * 1000,
                 maxRequests: 50,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.storeId || req.params.storeID;
                     return `staff:cache:stats:${context}:${storeId}:${req.ip}`;
                 }
@@ -207,7 +207,7 @@ class StoreStaffController extends Controller{
                 windowMs: 15 * 60 * 1000,
                 maxRequests: rateLimitConfig.get,
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.storeId || req.params.storeID;
                     return `staff:stats:${context}:${storeId}:${req.ip}`;
                 }
@@ -216,7 +216,7 @@ class StoreStaffController extends Controller{
                 ttl: 300,
                 prefix: 'staff',
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : (req.tenant?.subdomain || 'unknown');
+                    const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.storeId || req.params.storeID;
                     return `stats:${context}:${storeId}`;
                 },
@@ -437,9 +437,9 @@ class StoreStaffController extends Controller{
     }
     private index = async (req: Request, res: Response, next: NextFunction): Promise<void> =>{
         this.validateTenantContext(req);
-        const storeID = req.storeId || req.params.storeID;
+        const storeID = req.params.storeID;
         
-        const { page, limit, role, status, userName, sortBy, sortOrder, sortField, sortDirection } = req.query as any;
+        const { page, limit, role, status, userName, name, email, sortBy, sortOrder, sortField, sortDirection } = req.query as any;
 
         try {
             const sort: Record<string, 1 | -1> = {};
@@ -451,22 +451,42 @@ class StoreStaffController extends Controller{
                 sort.createdAt = -1;
             }
 
-            const result = await this.storeMemberService.paginateMemberships(req.tenantConnection!, {
+            // Handle different query parameter names for user search
+            let userSearchTerm = userName as string;
+            if (!userSearchTerm && name) {
+                userSearchTerm = decodeURIComponent(name as string).trim();
+            }
+            if (!userSearchTerm && email) {
+                userSearchTerm = decodeURIComponent(email as string).trim();
+            }
+            
+          
+            
+          
+
+            let result = await this.storeMemberService.paginateMemberships(req.tenantConnection!, {
                 page: Number(page) || 1,
                 limit: Number(limit) || 10,
                 storeId: storeID,
                 role: role as any,
                 status: status as any,
-                userName: userName as string,
+                userName: userSearchTerm, // This searches across user name, email, and mobile
                 populateUser: true,
                 populateStore: false,
                 sort
             });
 
-            Logging.info('Result', result)
+           
 
-            if (!result ) {
-                throw new NotFoundError('No staff found for this store', 'store', storeID);
+            // Don't throw error if no results found - return empty result instead
+            if (!result) {
+                result = {
+                    items: [],
+                    total: 0,
+                    page: Number(page) || 1,
+                    limit: Number(limit) || 10,
+                    pages: 0
+                };
             }
 
             responseResult.sendResponse({

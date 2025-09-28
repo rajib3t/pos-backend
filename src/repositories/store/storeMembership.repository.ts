@@ -1,6 +1,7 @@
 import { Connection } from "mongoose";
 import BaseRepository from "../base.repository";
 import StoreMembership, { IStoreMembership } from "../../models/store/storeMembership.model";
+import Logging from "../../libraries/logging.library";
 
 type MembershipRole = 'staff' | 'admin' | 'manager' | 'viewer';
 type MembershipStatus = 'active' | 'inactive' | 'pending';
@@ -147,7 +148,7 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
         const filter: any = { store: storeId };
         if (status) filter.status = status;
         if (role) filter.role = role;
-
+        Logging.debug("Check filter", filter);
         return this.findPaginated({
             filter,
             page,
@@ -202,11 +203,27 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
         }
 
         // If dynamic name filters are requested, use aggregation for server-side filtering on populated fields
+        console.log('Repository: Checking aggregation condition - userName:', userName, 'storeName:', storeName);
         if (userName || storeName) {
+            console.log('Repository: Using aggregation path');
             const pipeline: any[] = [];
             // Base match
+            console.log('Base filter for aggregation:', filter);
             if (Object.keys(filter).length > 0) {
                 pipeline.push({ $match: filter });
+                
+                // Test: Check if base match returns any results
+                const baseMatchResult = await (this.model as any).aggregate([{ $match: filter }, { $limit: 3 }]).exec();
+                console.log('Results after base match (before lookups):', baseMatchResult.length);
+                baseMatchResult.forEach((item: any, index: number) => {
+                    console.log(`Base match item ${index + 1}:`, {
+                        id: item._id,
+                        role: item.role,
+                        status: item.status,
+                        store: item.store,
+                        user: item.user
+                    });
+                });
             }
 
             // Lookups
@@ -230,16 +247,47 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
                 },
                 { $unwind: '$store' }
             );
+            
+            // Test: Check if lookups worked
+            const lookupTestPipeline = [...pipeline, { $limit: 2 }];
+            const lookupResult = await (this.model as any).aggregate(lookupTestPipeline).exec();
+            console.log('Results after lookups:', lookupResult.length);
+            lookupResult.forEach((item: any, index: number) => {
+                console.log(`After lookup item ${index + 1}:`, {
+                    id: item._id,
+                    role: item.role,
+                    status: item.status,
+                    user: {
+                        id: item.user?._id,
+                        name: item.user?.name,
+                        email: item.user?.email,
+                        mobile: item.user?.mobile
+                    },
+                    store: {
+                        id: item.store?._id,
+                        name: item.store?.name
+                    }
+                });
+            });
 
             // Dynamic name filters
             const nameMatch: any = {};
             if (userName) {
+                console.log('Building regex for userName:', userName);
                 const regex = new RegExp(userName, 'i');
                 nameMatch.$or = [
                     { 'user.name': regex },
                     { 'user.email': regex },
                     { 'user.mobile': regex }
                 ];
+                console.log('Regex pattern:', regex.toString());
+                console.log('Name match condition (simplified):', {
+                    $or: [
+                        { 'user.name': `/${userName}/i` },
+                        { 'user.email': `/${userName}/i` },
+                        { 'user.mobile': `/${userName}/i` }
+                    ]
+                });
             }
             if (storeName) {
                 const regex = new RegExp(storeName, 'i');
@@ -247,6 +295,7 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
                 nameMatch.$or.push({ 'store.name': regex }, { 'store.code': regex });
             }
             if (nameMatch.$or && nameMatch.$or.length > 0) {
+                console.log('Adding name filter to pipeline');
                 pipeline.push({ $match: nameMatch });
             }
 
@@ -265,21 +314,33 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
                         { $limit: limit },
                         {
                             $project: {
-                                ...((projection || {}) as any),
-                                user: populateUser ? {
-                                    name: 1,
-                                    email: 1,
-                                    mobile: 1,
-                                    role: 1,
-                                    status: 1,
-                                    _id: 1
-                                } : 0,
-                                store: populateStore ? {
-                                    name: 1,
-                                    code: 1,
-                                    status: 1,
-                                    _id: 1
-                                } : 0
+                                _id: 1,
+                                role: 1,
+                                status: 1,
+                                permissions: 1,
+                                joinedAt: 1,
+                                invitedBy: 1,
+                                createdAt: 1,
+                                updatedAt: 1,
+                                ...(populateUser ? {
+                                    user: {
+                                        name: 1,
+                                        email: 1,
+                                        mobile: 1,
+                                        role: 1,
+                                        status: 1,
+                                        _id: 1
+                                    }
+                                } : { user: 1 }),
+                                ...(populateStore ? {
+                                    store: {
+                                        name: 1,
+                                        code: 1,
+                                        status: 1,
+                                        _id: 1
+                                    }
+                                } : { store: 1 }),
+                                ...((projection || {}) as any)
                             }
                         }
                     ],
@@ -291,6 +352,8 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
             const facet = (aggResult && aggResult[0]) || { items: [], total: [] };
             const items = facet.items || [];
             const total = (facet.total && facet.total[0] && facet.total[0].count) || 0;
+            
+            console.log('Aggregation result - items count:', items.length, 'total:', total);
             return {
                 items,
                 total,
@@ -301,6 +364,8 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
         }
 
         // Default path using base pagination with optional populates
+        console.log('Repository: Using default pagination path');
+        console.log('Repository: Filter for default path:', filter);
         const populate: any[] = [];
         if (populateUser) populate.push({ path: 'user', select: 'name email mobile role status' });
         if (populateStore) populate.push({ path: 'store', select: 'name code status' });

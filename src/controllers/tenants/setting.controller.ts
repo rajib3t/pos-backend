@@ -37,8 +37,8 @@ class SettingController extends Controller {
                 ttl: 600, // 10 minutes
                 prefix: 'settings',
                 keyGenerator: (req) => {
-                    const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain || 'unknown';
-                    return `detail:${req.params.subdomain}:${context}`;
+                    const context = req.isLandlord ? 'landlord' : req?.subdomain || 'unknown';
+                    return `detail:${req.subdomain}:${req.params.storeID}:${context}`;
                 }
             }),
             EventEmissionMiddleware.forRead('settings'),
@@ -55,9 +55,9 @@ class SettingController extends Controller {
                 keyGenerator: (req) => `settings:update:${req.params.subdomain}:${req.ip}`
             }),
             CacheMiddleware.invalidate((req) => {
-                const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain || 'unknown';
+                const context = req.isLandlord ? 'landlord' : req.subdomain || 'unknown';
                 return [
-                    `settings:detail:${req.params.subdomain}:${context}`,
+                    `settings:detail:${req.subdomain}:${req.params.storeID}:${context}`,
                     `settings:stats:*`,
                     `tenant:detail:*` // Also invalidate tenant cache as settings affect tenant data
                 ];
