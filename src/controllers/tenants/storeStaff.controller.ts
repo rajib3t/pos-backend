@@ -366,7 +366,7 @@ class StoreStaffController extends Controller{
                 userId,
                 storeId: storeID,
                 role,
-                status,
+                 status:'active',
                 permissions,
                 invitedBy
             });

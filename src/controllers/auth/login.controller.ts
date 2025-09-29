@@ -122,10 +122,13 @@ class LoginController extends Controller {
             
             const accessToken = await this.tokenService.generateToken(tokenPayload);
             const refreshToken = await this.tokenService.generateRefreshToken(tokenPayload, connection);
-            const store = this.storeMemberService.findByUser(connection!, user._id as string,'pending')
-           console.log('Store',store);
+            const stores = await this.storeMemberService.findByUser(connection!, user._id as string, 'pending');
+            if(stores.length > 0) {
+                const store = stores[0];
+                
+            }
             
-            const userResponse = { 
+            const response = { 
                 email: user.email, 
                 name: user.name, 
                 id: user._id,
@@ -137,6 +140,18 @@ class LoginController extends Controller {
                 loginTime: new Date().toISOString(),
                 role:user.role
             };
+            let userResponse;
+            if(stores.length > 0) {
+                   userResponse = {
+                    ...response,
+                    store:stores[0]
+                }
+            }else{
+                 userResponse = {
+                    ...response,
+                    store:null
+                }
+            }
 
             const loginData = { accessToken, user: userResponse, refreshToken };
             

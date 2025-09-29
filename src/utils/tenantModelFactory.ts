@@ -3,11 +3,15 @@ import { IUser } from '../models/user.model';
 import { ITenant } from '../models/tenant.model';
 import { IAddress } from '../models/address.model';
 import { IToken } from '../models/token.model';
+import { IStore } from '../models/store/store.model';
+import { IStoreMembership } from '../models/store/storeMembership.model';
 
 // Import existing schemas
 import UserModel from '../models/user.model';
 import AddressModel from '../models/address.model';
 import TokenModel from '../models/token.model';
+import StoreModel from '../models/store/store.model';
+import StoreMembershipModel from '../models/store/storeMembership.model';
 
 export class TenantModelFactory {
     private static modelCache: Map<string, Map<string, Model<any>>> = new Map();
@@ -75,6 +79,22 @@ export class TenantModelFactory {
     public static getTokenModel(connection: Connection): Model<IToken> {
         const tokenSchema = TokenModel.schema;
         return this.getModel<IToken>(connection, 'Token', tokenSchema);
+    }
+
+    /**
+     * Get Store model for tenant
+     */
+    public static getStoreModel(connection: Connection): Model<IStore> {
+        const storeSchema = StoreModel.schema;
+        return this.getModel<IStore>(connection, 'Store', storeSchema);
+    }
+
+    /**
+     * Get StoreMembership model for tenant
+     */
+    public static getStoreMembershipModel(connection: Connection): Model<IStoreMembership> {
+        const storeMembershipSchema = StoreMembershipModel.schema;
+        return this.getModel<IStoreMembership>(connection, 'StoreMembership', storeMembershipSchema);
     }
 
     /**

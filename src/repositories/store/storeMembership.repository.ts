@@ -2,20 +2,35 @@ import { Connection } from "mongoose";
 import BaseRepository from "../base.repository";
 import StoreMembership, { IStoreMembership } from "../../models/store/storeMembership.model";
 import Logging from "../../libraries/logging.library";
+import { TenantModelFactory } from "../../utils/tenantModelFactory";
 
 type MembershipRole = 'staff' | 'admin' | 'manager' | 'viewer';
 type MembershipStatus = 'active' | 'inactive' | 'pending';
 
 export default class StoreMembershipRepository extends BaseRepository<IStoreMembership> {
+    private connection?: Connection;
+
     constructor(connection?: Connection) {
         if (connection) {
             super(StoreMembership, 'StoreMembership', connection);
+            this.connection = connection;
         } else {
             super(StoreMembership);
         }
     }
 
+    /**
+     * Ensure required models are registered on tenant connection for aggregation operations
+     */
+    private ensureModelsRegistered(): void {
+        if (this.connection) {
+            TenantModelFactory.getStoreModel(this.connection);
+            TenantModelFactory.getUserModel(this.connection);
+        }
+    }
+
     async findByStore(storeId: string, status?: MembershipStatus) {
+        this.ensureModelsRegistered();
         const filter: any = { store: storeId };
         if (status) filter.status = status;
         return this.findMany(filter, {
@@ -27,6 +42,7 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
     }
 
     async findByUser(userId: string, status?: MembershipStatus) {
+        this.ensureModelsRegistered();
         const filter: any = { user: userId };
         if (status) filter.status = status;
         return this.findMany(filter, {
@@ -48,7 +64,8 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
     }
 
     async getStoreAdmins(storeId: string) {
-        return this.findMany({ store: storeId, role: 'admin', status: 'active' } as any, {
+        this.ensureModelsRegistered();
+        return this.findMany({ store: storeId, role: 'manager', status: 'active' } as any, {
             populate: [{ path: 'user', select: 'name email' }]
         });
     }
@@ -144,6 +161,7 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
         page?: number;
         limit?: number;
     }) {
+        this.ensureModelsRegistered();
         const { status, role, page = 1, limit = 10 } = options || {};
         const filter: any = { store: storeId };
         if (status) filter.status = status;
@@ -205,6 +223,7 @@ export default class StoreMembershipRepository extends BaseRepository<IStoreMemb
         // If dynamic name filters are requested, use aggregation for server-side filtering on populated fields
         console.log('Repository: Checking aggregation condition - userName:', userName, 'storeName:', storeName);
         if (userName || storeName) {
+            this.ensureModelsRegistered();
             console.log('Repository: Using aggregation path');
             const pipeline: any[] = [];
             // Base match
