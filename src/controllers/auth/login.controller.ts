@@ -122,8 +122,8 @@ class LoginController extends Controller {
             
             const accessToken = await this.tokenService.generateToken(tokenPayload);
             const refreshToken = await this.tokenService.generateRefreshToken(tokenPayload, connection);
-            //const store = this.storeMemberService.findByUser(connection!, user._id as string,'pending')
-         //   console.log('Store',store);
+            const store = this.storeMemberService.findByUser(connection!, user._id as string,'pending')
+           console.log('Store',store);
             
             const userResponse = { 
                 email: user.email, 

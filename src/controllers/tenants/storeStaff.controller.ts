@@ -107,17 +107,19 @@ class StoreStaffController extends Controller{
                 const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                 const storeId = req.params.storeID;
                 const patterns = [
-                   `staff:list:${context}:${storeId}:${req.ip}`,
-                    `staff:stats:${context}*`,
-                    `staff:candidates:list:${context}*`
+                    // Invalidate staff list cache (matches keyGenerator pattern)
+                    `staff:list:${context}:${storeId}:*`,
+                    // Invalidate staff stats cache for this store
+                    `staff:stats:${context}:${storeId}`,
+                    // Invalidate staff candidates cache for this store
+                    `staff:candidates:list:${context}:${storeId}:*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
-                       `staff:list:${req.tenant._id}*`,
-                        `staff:stats:${req.tenant._id}*`,
-                        `staff:candidates:list:${req.tenant._id}*`
-                        
+                        `staff:list:${req.tenant._id}:${storeId}:*`,
+                        `staff:stats:${req.tenant._id}:${storeId}`,
+                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
                     );
                 }
                 return patterns;
@@ -136,24 +138,27 @@ class StoreStaffController extends Controller{
                 maxRequests: rateLimitConfig.delete || 5,
                 keyGenerator: (req) => {
                     const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
-                    const storeId = req.storeId || req.params.storeID;
+                    const storeId =req.params.storeID;
                     return `staff:remove:${context}:${storeId}:${req.ip}`;
                 }
             }),
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
-                const storeId =  req.params.storeID || req.storeId ;
+                const storeId = req.params.storeID
                 const patterns = [
-                    `staff:list:${context}*`,
-                    `staff:stats:${context}*`,
-                    `staff:candidates:list:${context}*`
+                    // Invalidate staff list cache (matches keyGenerator pattern)
+                    `staff:list:${context}:${storeId}:*`,
+                    // Invalidate staff stats cache for this store
+                    `staff:stats:${context}:${storeId}`,
+                    // Invalidate staff candidates cache for this store
+                    `staff:candidates:list:${context}:${storeId}:*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
-                        `staff:list:${req.tenant._id}*`,
-                        `staff:stats:${req.tenant._id}*`,
-                        `staff:candidates:list:${req.tenant._id}*`
+                        `staff:list:${req.tenant._id}:${storeId}:*`,
+                        `staff:stats:${req.tenant._id}:${storeId}`,
+                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
                     );
                 }
                 return patterns;
@@ -348,7 +353,7 @@ class StoreStaffController extends Controller{
      */
     private add = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         this.validateTenantContext(req);
-        const storeID = req.storeId || req.params.storeID;
+        const storeID =  req.params.storeID;
         const { userId, role, status, permissions } = req.body as { userId: string; role?: any; status?: any; permissions?: string[] };
         const invitedBy = req.userId;
 
@@ -547,7 +552,7 @@ class StoreStaffController extends Controller{
      */
     private remove = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         this.validateTenantContext(req);
-        const storeID = req.storeId || req.params.storeID;
+        const storeID =  req.params.storeID;
         const { userId } = req.body as { userId: string };
 
         try {
