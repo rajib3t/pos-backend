@@ -12,6 +12,7 @@ import { loginSchema } from "../../validators/auth.validator";
 import EventService from "../../events/EventService";
 import { cookieConfig } from "../../config";
 import StoreMembershipService from "../../services/store/storeMembership.service";
+import { AuthorizationError } from "../../errors/CustomErrors";
 class LoginController extends Controller {
     private userService: UserService;
     private tokenService: TokenService;
@@ -95,6 +96,33 @@ class LoginController extends Controller {
                 }, EventService.createContextFromRequest(req));
 
                 return errorResponse.sendError({ res, statusCode: 401, message: "Password is incorrect" });
+            }
+
+            // Check store assignment for non-owner users on subdomain requests
+            if (!req.isLandlord && user.role !== 'owner') {
+                const connection = req.tenantConnection;
+                const userStores = await this.storeMemberService.findByUser(connection!, user._id as string, 'active');
+                
+                if (!userStores || userStores.length === 0) {
+                    // Emit failed login attempt for no store assignment
+                    EventService.emitLoginAttempt({
+                        email,
+                        success: false,
+                        ipAddress: req.ip,
+                        userAgent: req.headers['user-agent'],
+                        tenantId: req.tenant?._id as string,
+                        errorReason: 'No store assignment found'
+                    }, EventService.createContextFromRequest(req));
+
+                    Logging.warn(`Login denied for user ${email} - no store assignments found in tenant ${req.tenant?.subdomain}`);
+                    return errorResponse.sendError({ 
+                        res, 
+                        statusCode: 403, 
+                        message: "Access denied: No store assignment found. Please contact your administrator." 
+                    });
+                }
+
+                Logging.info(`User ${email} has ${userStores.length} store assignment(s) in tenant ${req.tenant?.subdomain}`);
             }
 
             const options = {

@@ -3,6 +3,8 @@ import { Controller } from "../controller";
 import { responseResult } from "../../utils/response";
 import { errorResponse } from "../../utils/errorResponse";
 import StoreService from "../../services/store/store.service";
+import UserService from "../../services/user.service";
+import StoreMembershipService from "../../services/store/storeMembership.service";
 import { DateUtils } from '../../utils/dateUtils';
 import Logging from '../../libraries/logging.library';
 import { 
@@ -26,7 +28,7 @@ import EventEmissionMiddleware from '../../middlewares/eventEmission.middleware'
 import ValidateMiddleware from '../../middlewares/validate';
 import { storeQuerySchema , createStoreSchema, updateStoreSchema, getStoreSchema, deleteStoreSchema} from '../../validators/store.validator';
 import { IStore } from '../../models/store/store.model';
-import { th } from 'zod/locales';
+
 
 
 class StoreController extends Controller{
@@ -54,8 +56,9 @@ class StoreController extends Controller{
                 prefix: 'stores',
                 keyGenerator: (req) => {
                     const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
+                    const userId = req.userId || 'anonymous';
                     const queryStr = JSON.stringify(req.query || {});
-                    return `list:${context}:${Buffer.from(queryStr).toString('base64')}`;
+                    return `list:${context}:${userId}:${Buffer.from(queryStr).toString('base64')}`;
                 },
                 condition: (req) => {
                     const email = req.query?.email?.toString();
@@ -83,7 +86,7 @@ class StoreController extends Controller{
             CacheMiddleware.invalidate((req) => {
                 const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
                 const patterns = [
-                    `stores:list:${context}:*`,
+                    `stores:list:${context}:*`, // Invalidate all user-specific store lists
                     `stores:stats:${context}:*`
                 ];
                 
@@ -108,11 +111,11 @@ class StoreController extends Controller{
                 prefix: 'stores',
                 keyGenerator: (req) => {
                     const context = req.isLandlord ? 'landlord' : req.tenant?.subdomain;
-                    return `detail:${context}:${req.params.id}`;
+                    return `detail:${context}:${req.params.storeID}`;
                 }
             }),
-            EventEmissionMiddleware.forRead('user'),
-            this.asyncHandler(this.getStore)
+            EventEmissionMiddleware.forRead('store'),
+            this.asyncHandler(this.getStore.bind(this))
         );
         this.router.put("/:storeID", 
             validateMiddleware.validate(updateStoreSchema),
@@ -204,7 +207,9 @@ class StoreController extends Controller{
         }
     }
     /**
-     * Get all stores with pagination
+     * Get stores with role-based access control
+     * - Owner role: Gets all stores
+     * - Other roles (staff, admin, manager): Get only stores they're assigned to
      */
     private  index =  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         
@@ -227,6 +232,26 @@ class StoreController extends Controller{
         } = req.query;
         try {
             this.validateTenantContext(req);
+            
+            // Get current user to check role
+            const currentUserId = req.userId;
+            if (!currentUserId) {
+                throw new ValidationError("User authentication required", ["userId: User ID is required"]);
+            }
+
+            // Get user details to check role
+            let currentUser;
+            if (req.isLandlord) {
+                currentUser = await UserService.getInstance().findById(currentUserId);
+            } else {
+                currentUser = await UserService.getInstance().findById(req.tenantConnection!, currentUserId);
+            }
+
+            if (!currentUser) {
+                throw new NotFoundError("User not found", "user", currentUserId);
+            }
+
+            // Build base filter
             const filter: any = {};
             
             if (name) {
@@ -243,6 +268,49 @@ class StoreController extends Controller{
             if (status) {
                 filter.status = { $regex: status, $options: 'i' }; // Case-insensitive search
             }
+
+            // Role-based store filtering
+            if (currentUser.role !== 'owner') {
+                // For non-owner roles, get only stores where user is a member
+                const storeMembershipService = StoreMembershipService.getInstance();
+                const userMemberships = await storeMembershipService.findByUser(
+                    req.tenantConnection!, 
+                    currentUserId, 
+                    'active' // Only active memberships
+                );
+
+                if (!userMemberships || userMemberships.length === 0) {
+                    // User has no store memberships, return empty result
+                    const emptyResult = {
+                        items: [],
+                        total: 0,
+                        page: Number(page) || 1,
+                        limit: Number(limit) || 10,
+                        pages: 0
+                    };
+
+                    responseResult.sendResponse({
+                        res,
+                        data: emptyResult,
+                        message: 'No stores found for current user role',
+                        statusCode: 200
+                    });
+                    return;
+                }
+
+                // Extract store IDs from memberships
+                const userStoreIds = userMemberships.map((membership: any) => 
+                    membership.store?._id || membership.store
+                ).filter(Boolean);
+
+                // Add store ID filter to only show stores user is assigned to
+                filter._id = { $in: userStoreIds };
+
+                Logging.info(`Role-based filtering applied for user ${currentUserId} (role: ${currentUser.role}): ${userStoreIds.length} stores accessible`);
+            } else {
+                Logging.info(`Owner access granted for user ${currentUserId}: all stores accessible`);
+            }
+
              // Date range filtering with improved timezone handling
             if (createdAtFrom || createdAtTo) {
                 const timezoneOffset = DateUtils.getTimezoneOffset(req);
@@ -289,7 +357,7 @@ class StoreController extends Controller{
             } else {
                 sort.createdAt = -1; // Default sort by creation date descending
             }
-             // Use the enhanced getUsersWithPagination method
+             // Use the enhanced getDataWithPagination method
              const result = await this.storeService.getDataWithPagination(req.tenantConnection!, {
                 page: Number(page) || 1,
                 limit: Number(limit) || 10,
@@ -303,18 +371,20 @@ class StoreController extends Controller{
                 throw new NotFoundError("No stores found", "stores", req.isLandlord ? 'landlord' : req.tenant?._id as string);
             }
 
-            // Emit audit event for user list access
+            // Emit audit event for store list access with role information
             EventService.emitAuditTrail(
                 'store_list_accessed',
                 'store_list',
                 req.isLandlord ? 'landlord' : req.tenant?._id as string,
-                'system', // or req.userId if available
+                currentUserId,
                 {
                     totalStores: (result as any).total || (result as any).totalCount || result.items?.length || 0,
                     page: Number(page) || 1,
                     limit: Number(limit) || 10,
                     filters: filter,
                     sort: sort,
+                    userRole: currentUser.role,
+                    roleBasedFiltering: currentUser.role !== 'owner',
                     context: req.isLandlord ? 'landlord' : 'tenant'
                 },
                 EventService.createContextFromRequest(req)
@@ -520,6 +590,8 @@ class StoreController extends Controller{
     private getStore = async (req: Request, res:Response, next:NextFunction) : Promise<void> =>{
         this.validateTenantContext(req);
         const storeID = req.params.storeID;
+        console.log('storeID', storeID);
+        
         try {
             const store = await this.storeService.findById(req.tenantConnection!, storeID);
             if (!store ) {
@@ -529,7 +601,7 @@ class StoreController extends Controller{
             responseResult.sendResponse({
                 res,
                 statusCode:200,
-                message:'Store updated successfully',
+                message:'Store retrieved successfully',
                 data:store
             })
             return;

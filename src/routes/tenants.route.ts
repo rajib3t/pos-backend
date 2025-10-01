@@ -4,6 +4,7 @@ import AuthMiddleware from "../middlewares/authMiddleware";
 import SimpleTenantMiddleware from "../middlewares/simpleTenantMiddleware";
 import StoreController from "../controllers/tenants/store.controller";
 import StoreStaffController from '../controllers/tenants/storeStaff.controller'
+import materialCategoryController from "../controllers/tenants/stores/material-category.controller";
 const tenantsRouter: Router = Router();
 
 // Use optional tenant middleware - allows both landlord and tenant requests
@@ -22,6 +23,10 @@ const defaultRoutes  = [
     {
         path:'/stores',
         route:StoreStaffController
+    },
+    {
+        path:'/stores',
+        route:materialCategoryController
     }
 ];
 

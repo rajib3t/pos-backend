@@ -13,14 +13,17 @@ import CacheService from "../../services/cache.service";
 import EventEmissionMiddleware from "../../middlewares/eventEmission.middleware";
 import EventService from "../../events/EventService";
 import DataSanitizer from "../../utils/sanitizeData";
+import StoreService from "../../services/store/store.service";
 
 class SettingController extends Controller {
     private tenantService: TenantService;
     private settingService: SettingService;
+    private storeService : StoreService
     constructor() {
         super();
         this.tenantService =  TenantService.getInstance();
         this.settingService = SettingService.getInstance();
+        this.storeService = StoreService.getInstance()
         this.initializeRoutes();
     }
 
@@ -129,29 +132,36 @@ class SettingController extends Controller {
 
         try {
            this.validateTenantContext(req);
-            
+            const store = await this.storeService.findById(req.tenantConnection!, storeID)
          
                 // Tenant request - use tenant database
             const    settings = await this.settingService.findSettingTenantById(req.tenantConnection!, storeID);
+            let responseData;
+            if(settings){
             
-            
-            const responseData = {
-                shopName: settings?.shopName ,
-                code:settings?.code,
-                address1: settings?.address,
-                address2: settings?.address2,
-                city: settings?.city,
-                state: settings?.state,
-                country: settings?.country,
-                zipCode: settings?.zipCode,
-                currency: settings?.currency,
-                phone: settings?.phone,
-                email: settings?.email,
-                logoUrl: settings?.logoUrl,
-                fassi : settings?.fassi,
-                gstNumber : settings?.gstNumber,
-                sgst : settings?.sgst,
-                cgst : settings?.cgst,
+                responseData = {
+                    shopName: settings?.shopName ,
+                    code:settings?.code,
+                    address1: settings?.address,
+                    address2: settings?.address2,
+                    city: settings?.city,
+                    state: settings?.state,
+                    country: settings?.country,
+                    zipCode: settings?.zipCode,
+                    currency: settings?.currency,
+                    phone: settings?.phone,
+                    email: settings?.email,
+                    logoUrl: settings?.logoUrl,
+                    fassi : settings?.fassi,
+                    gstNumber : settings?.gstNumber,
+                    sgst : settings?.sgst,
+                    cgst : settings?.cgst,
+                }
+            }else{
+                responseData = {
+                    shopName: store?.name ,
+                    code:store?.code,
+                }
             }
 
             // Emit settings viewed event

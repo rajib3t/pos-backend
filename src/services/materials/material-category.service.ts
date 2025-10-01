@@ -56,6 +56,19 @@ class MaterialCategoryService {
             }
         }
 
+        public async findAllByKey(condition: { [key: string]: any }): Promise<IMaterialCategory[] | null>;
+        public async findAllByKey(tenantConnection: Connection, condition: { [key: string]: any }): Promise<IMaterialCategory[] | null>;
+        public async findAllByKey(connectionOrCondition: Connection | { [key: string]: any }, condition?: { [key: string]: any }): Promise<IMaterialCategory[] | null> {
+            if (connectionOrCondition instanceof Connection) {
+                // Using tenant connection
+                const repositoryForTenant = new MaterialCategoryRepository(connectionOrCondition);
+                return await repositoryForTenant.findMany(condition!);
+            } else {
+                // Using main database (backward compatibility)
+                return await this.repository.findMany(connectionOrCondition);
+            }
+        }
+
         public async update(id: string, userData: Partial<IMaterialCategory>): Promise<IMaterialCategory | null>;
         public async update(tenantConnection: Connection, id: string, userData: Partial<IMaterialCategory>): Promise<IMaterialCategory | null>;
         public async update(connectionOrId: Connection | string, idOrData: string | Partial<IMaterialCategory>, userData?: Partial<IMaterialCategory>): Promise<IMaterialCategory | null> {

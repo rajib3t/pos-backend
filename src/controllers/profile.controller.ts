@@ -187,6 +187,8 @@ class ProfileController extends Controller {
                 email: userProfile.email,
                 name: userProfile.name,
                 mobile: userProfile.mobile,
+                role: userProfile.role,
+                isActive: userProfile?.status as boolean,
                 address: userAddress ? {
                     street: userAddress.street,
                     city: userAddress.city,

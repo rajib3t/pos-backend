@@ -84,10 +84,10 @@ class StoreStaffController extends Controller{
                 shouldCache: (req, res) => res.statusCode >= 200 && res.statusCode < 300
             }),
             EventEmissionMiddleware.forRead('store_staff_candidates', {
-                extractResourceId: (req) => req.storeId || req.params.storeID,
+                extractResourceId: (req) =>req.params.storeID,
                 skipCrud: true
             }),
-            this.asyncHandler(this.getCandidates)
+            this.asyncHandler(this.getCandidates.bind(this))
         );
 
         // Add staff to a store
@@ -112,14 +112,14 @@ class StoreStaffController extends Controller{
                     // Invalidate staff stats cache for this store
                     `staff:stats:${context}:${storeId}`,
                     // Invalidate staff candidates cache for this store
-                    `staff:candidates:list:${context}:${storeId}:*`
+                    `staff:candidates:list:${context}:*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
                         `staff:list:${req.tenant._id}:${storeId}:*`,
                         `staff:stats:${req.tenant._id}:${storeId}`,
-                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
+                        `staff:candidates:list:${req.tenant._id}:*`
                     );
                 }
                 return patterns;
@@ -151,14 +151,14 @@ class StoreStaffController extends Controller{
                     // Invalidate staff stats cache for this store
                     `staff:stats:${context}:${storeId}`,
                     // Invalidate staff candidates cache for this store
-                    `staff:candidates:list:${context}:${storeId}:*`
+                    `staff:candidates:list:${context}:*`
                 ];
                 // Also invalidate landlord style keys using tenantId, if available
                 if (!req.isLandlord && req.tenant?._id) {
                     patterns.push(
                         `staff:list:${req.tenant._id}:${storeId}:*`,
                         `staff:stats:${req.tenant._id}:${storeId}`,
-                        `staff:candidates:list:${req.tenant._id}:${storeId}:*`
+                        `staff:candidates:list:${req.tenant._id}:*`
                     );
                 }
                 return patterns;
@@ -265,6 +265,9 @@ class StoreStaffController extends Controller{
                 ...(assignedUserIds.length > 0 ? { _id: { $nin: assignedUserIds } } : {})
             };
 
+            console.log('Assigned User IDs:', assignedUserIds);
+            
+
             if (name) {
                 const decodedName = decodeURIComponent(name as string);
                 filter.name = { $regex: decodedName, $options: 'i' }; // Case-insensitive search
@@ -366,7 +369,7 @@ class StoreStaffController extends Controller{
                 userId,
                 storeId: storeID,
                 role,
-                 status:'active',
+                status:'active',
                 permissions,
                 invitedBy
             });
