@@ -1,26 +1,25 @@
 import { Connection } from "mongoose";
 
-
-import MaterialCategory, { IMaterialCategory } from "../../models/materials/material-category.model";
-import { PaginatedResult, PaginationOptions, Repository } from "../repository";
+import MaterialItem, { IMaterialItem } from "../../models/materials/material-item.model";
+import { PaginatedResult, PaginationOptions } from "../repository";
 import BaseRepository from "../base.repository";
 import { TenantModelFactory } from "../../utils/tenantModelFactory";
 
-export default class MaterialCategoryRepository  extends BaseRepository<IMaterialCategory>{
+export default class MaterialItemRepository extends BaseRepository<IMaterialItem> {
 
     private connection?: Connection;
 
     constructor(connection?: Connection) {
         if (connection) {
-           super(MaterialCategory, 'MaterialCategory', connection);
-           this.connection = connection;
-           
+            super(MaterialItem, 'MaterialItem', connection);
+            this.connection = connection;
         } else {
             // Use default master database connection
-            super(MaterialCategory);
-            
+            super(MaterialItem);
         }
     }
+
+        
 
     /**
      * Ensure required models are registered on tenant connection
@@ -35,16 +34,19 @@ export default class MaterialCategoryRepository  extends BaseRepository<IMateria
     /**
      * Override findPaginated to ensure models are registered before populate
      */
-    async findPaginated(options?: PaginationOptions<IMaterialCategory>): Promise<PaginatedResult<IMaterialCategory>> {
-        // Ensure User model is registered for populate operations
+    async findPaginated(options?: PaginationOptions<IMaterialItem>): Promise<PaginatedResult<IMaterialItem>> {
+        // Ensure User and MaterialCategory models are registered for populate operations
         this.ensureModelsRegistered();
-        
+
         // Debug logging
         if (options?.populate) {
-            console.log('MaterialCategory Repository - Populate options:', JSON.stringify(options.populate, null, 2));
+            console.log('MaterialItem Repository - Populate options:', JSON.stringify(options.populate, null, 2));
         }
-        
+
         return super.findPaginated(options);
     }
-    
+
+
+
+
 }

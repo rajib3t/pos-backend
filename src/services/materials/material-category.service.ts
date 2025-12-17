@@ -55,7 +55,29 @@ class MaterialCategoryService {
                 return await this.repository.findById(connectionOrId, idOrOptions as QueryOptions | undefined);
             }
         }
-
+        public async findByKey(condition: { [key: string]: any }, options?: QueryOptions): Promise<IMaterialCategory | null>;
+        public async findByKey(tenantConnection: Connection, condition: { [key: string]: any }, options?: QueryOptions): Promise<IMaterialCategory | null>;
+        public async findByKey(connectionOrCondition: Connection | { [key: string]: any }, condition?: { [key: string]: any }, options?: QueryOptions): Promise<IMaterialCategory | null> {
+            if (connectionOrCondition instanceof Connection) {
+                // Using tenant connection
+                const repositoryForTenant = new MaterialCategoryRepository(connectionOrCondition);
+                return await repositoryForTenant.findOne(condition ?? {}, options);
+            } else {
+                // Using main database (backward compatibility)
+                return await this.repository.findOne(condition ?? {}, options);
+            }
+        }
+        public async findMany(tenantConnection: Connection, condition: { [key: string]: any }, options?: QueryOptions): Promise<IMaterialCategory[] | null>;
+        public async findMany(connectionOrCondition: Connection | { [key: string]: any }, conditionOrOptions?: { [key: string]: any } | QueryOptions, options?: QueryOptions): Promise<IMaterialCategory[] | null> {
+            if (connectionOrCondition instanceof Connection) {
+                // Using tenant connection
+                const repositoryForTenant = new MaterialCategoryRepository(connectionOrCondition);
+                return await repositoryForTenant.findMany(conditionOrOptions as { [key: string]: any }, options);
+            } else {
+                // Using main database (backward compatibility)
+                return await this.repository.findMany(connectionOrCondition, conditionOrOptions as QueryOptions | undefined);
+            }
+        }
         public async findAllByKey(condition: { [key: string]: any }): Promise<IMaterialCategory[] | null>;
         public async findAllByKey(tenantConnection: Connection, condition: { [key: string]: any }): Promise<IMaterialCategory[] | null>;
         public async findAllByKey(connectionOrCondition: Connection | { [key: string]: any }, condition?: { [key: string]: any }): Promise<IMaterialCategory[] | null> {

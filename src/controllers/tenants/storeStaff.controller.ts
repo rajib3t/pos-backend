@@ -79,7 +79,7 @@ class StoreStaffController extends Controller{
                     const context = req.isLandlord ? 'landlord' : (req.subdomain || 'unknown');
                     const storeId = req.params.storeID;
                     const queryStr = JSON.stringify(req.query || {});
-                    return `candidates:list:${context}:${storeId}:${Buffer.from(queryStr).toString('base64')}`;
+                    return `candidates:list:${context}:${Buffer.from(queryStr).toString('base64')}`;
                 },
                 shouldCache: (req, res) => res.statusCode >= 200 && res.statusCode < 300
             }),
@@ -251,7 +251,7 @@ class StoreStaffController extends Controller{
      */
     private getCandidates = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
         this.validateTenantContext(req);
-        const storeID = req.storeId || req.params.storeID;
+        const storeID = req.params.storeID;
         const { page, limit, name, email, mobile, role, status, sortField, sortDirection } = req.query as any;
 
         try {
